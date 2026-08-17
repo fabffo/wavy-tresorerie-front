@@ -1,0 +1,25 @@
+<div class="context-selector">
+  <label class="visually-hidden" for="societeCourante">Societe courante</label>
+  <select
+    id="societeCourante"
+    class="form-select form-select-sm context-select"
+    [ngModel]="societeSelectionneeId()"
+    (ngModelChange)="selectionnerSociete($event)"
+  >
+    @for (societe of contexteService.societesAutorisees(); track societe.id) {
+      <option [ngValue]="societe.id">{{ contexteService.libelleSociete(societe) }}</option>
+    } @empty {
+      @if (contexteService.societeCouranteId(); as societeId) {
+        <option [ngValue]="societeId">Societe {{ societeId }}</option>
+      }
+    }
+  </select>
+
+  <button class="btn btn-sm btn-outline-primary" type="button" (click)="appliquer()" [disabled]="changementDesactive()">
+    Appliquer
+  </button>
+
+  @if (message()) {
+    <span class="context-message" role="status">{{ message() }}</span>
+  }
+</div>

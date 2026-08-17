@@ -1,0 +1,38 @@
+<header class="app-header">
+  <nav class="navbar navbar-expand-lg bg-white border-bottom">
+    <div class="container-fluid gap-3">
+      <a class="navbar-brand fw-semibold" routerLink="/tresorerie">Wavy Trésorerie</a>
+
+      <div class="navbar-nav flex-row flex-wrap gap-2 me-auto">
+        <details class="nav-item topbar-menu">
+          <summary class="nav-link">Trésorerie</summary>
+          <div class="topbar-menu-list">
+            @for (item of menuTresorerie; track item.label) {
+              <a
+                class="topbar-menu-link"
+                routerLink="/tresorerie"
+                [queryParams]="item.vue ? { vue: item.vue } : null"
+              >
+                {{ item.label }}
+              </a>
+            }
+          </div>
+        </details>
+        <a class="nav-link" routerLink="/profil" routerLinkActive="active">Profil</a>
+      </div>
+
+      <div class="topbar-context">
+        <span class="topbar-item">{{ contexteService.email() ?? authService.authenticatedUser() }}</span>
+        <span class="topbar-item">{{ tenantLabel() }}</span>
+        <span class="topbar-item">{{ societeCouranteLabel() }}</span>
+        <span class="topbar-item">{{ rolesPrincipaux() }}</span>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-sm btn-outline-secondary" routerLink="/profil">Mon profil</a>
+        <app-contexte-selector />
+        <button class="btn btn-sm btn-outline-danger" type="button" (click)="deconnexion()">Déconnexion</button>
+      </div>
+    </div>
+  </nav>
+</header>

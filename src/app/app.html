@@ -1,0 +1,7 @@
+@if (authService.authenticatedUser() && !shellBridge.embedded()) {
+  <app-topbar />
+}
+
+<main class="app-main" [class.wavy-readonly]="shellBridge.readOnly()">
+  <router-outlet />
+</main>

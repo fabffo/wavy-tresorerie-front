@@ -1,0 +1,40 @@
+<section class="page-shell narrow">
+  <div class="d-flex flex-column gap-1 mb-4">
+    <h1 class="h3 mb-0">Connexion</h1>
+    <p class="text-secondary mb-0">Connexion par session socle, routée par la gateway.</p>
+  </div>
+
+  <form class="panel" [formGroup]="form" (ngSubmit)="testerConnexion()">
+    <div class="mb-3">
+      <label class="form-label" for="username">Email</label>
+      <input id="username" class="form-control" type="email" formControlName="username" autocomplete="username" />
+      @if (form.controls.username.touched && form.controls.username.invalid) {
+        <div class="form-text text-danger">Email requis.</div>
+      }
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label" for="password">Mot de passe</label>
+      <input id="password" class="form-control" type="password" formControlName="password" autocomplete="current-password" />
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <div class="form-text text-danger">Mot de passe requis.</div>
+      }
+    </div>
+
+    @if (error()) {
+      <div class="alert alert-danger" role="alert">{{ error() }}</div>
+    }
+
+    @if (message()) {
+      <div class="alert alert-success" role="status">{{ message() }}</div>
+    }
+
+    <button class="btn btn-primary" type="submit" [disabled]="loading()">
+      @if (loading()) {
+        Connexion...
+      } @else {
+        Se connecter
+      }
+    </button>
+  </form>
+</section>

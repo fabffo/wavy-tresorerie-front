@@ -1,0 +1,759 @@
+<section class="page">
+  <div class="page-header">
+    <div>
+      <h1>Trésorerie</h1>
+      <p>Suivi des comptes, opérations bancaires, rapprochements et échéances.</p>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Navigation trésorerie">
+    @for (item of onglets; track item.id) {
+      <button type="button" [class.active]="onglet() === item.id" (click)="changerOnglet(item.id)">{{ item.label }}</button>
+    }
+  </nav>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+  @if (message()) {
+    <div class="alert alert-info">{{ message() }}</div>
+  }
+
+  @if (dashboard(); as stats) {
+    <div class="metrics">
+      <article>
+        <span>Solde total</span>
+        <strong>{{ montant(stats.soldeTotal) }}</strong>
+      </article>
+      <article>
+        <span>Encaissements</span>
+        <strong>{{ montant(stats.encaissements) }}</strong>
+      </article>
+      <article>
+        <span>Décaissements</span>
+        <strong>{{ montant(stats.decaissements) }}</strong>
+      </article>
+      <article>
+        <span>À rapprocher</span>
+        <strong>{{ stats.operationsARapprocher }}</strong>
+      </article>
+    </div>
+  }
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>{{ titre() }}</h2>
+      @if (loading()) {
+        <span>Chargement...</span>
+      }
+    </div>
+
+    @switch (onglet()) {
+      @case ('dashboard') {
+        <div class="grid two">
+          <div>
+            <h3>Dernières opérations</h3>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Libellé</th><th>Compte</th><th class="right">Montant</th></tr>
+              </thead>
+              <tbody>
+                @for (operation of operations().slice(0, 8); track operation.id) {
+                  <tr>
+                    <td>{{ operation.dateOperation }}</td>
+                    <td>{{ operation.libelle }}</td>
+                    <td>{{ operation.compteBancaireLibelle }}</td>
+                    <td class="right">{{ montant(operation.montant) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="4" class="empty">Aucune opération bancaire.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3>Rapprochements</h3>
+            <table>
+              <thead>
+                <tr><th>Opération</th><th>Statut</th><th class="right">Montant</th></tr>
+              </thead>
+              <tbody>
+                @for (rapprochement of rapprochements().slice(0, 8); track rapprochement.id) {
+                  <tr>
+                    <td>{{ rapprochement.operationLibelle }}</td>
+                    <td>{{ rapprochement.statut }}</td>
+                    <td class="right">{{ montant(rapprochement.montantRapproche) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="3" class="empty">Aucun rapprochement.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+      @case ('comptes') {
+        @if (modeCompte() === 'liste') {
+          <div class="toolbar">
+            <button type="button" class="primary" (click)="nouveauCompte()">Nouveau compte bancaire</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nom du compte</th>
+                <th>Banque</th>
+                <th>IBAN masqué</th>
+                <th>Devise</th>
+                <th class="right">Solde initial</th>
+                <th class="right">Solde actuel</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (compte of comptes(); track compte.id) {
+                <tr>
+                  <td>{{ compte.nomCompte }}</td>
+                  <td>{{ compte.banque }}</td>
+                  <td>{{ compte.ibanMasque }}</td>
+                  <td>{{ compte.devise }}</td>
+                  <td class="right">{{ montant(compte.soldeInitial) }}</td>
+                  <td class="right">{{ montant(compte.soldeActuel) }}</td>
+                  <td><span class="badge" [class.muted]="!compte.actif">{{ compte.actif ? 'Actif' : 'Inactif' }}</span></td>
+                  <td>
+                    <div class="actions">
+                      <button type="button" (click)="voirCompte(compte)">Voir</button>
+                      <button type="button" (click)="modifierCompte(compte)">Modifier</button>
+                      <button type="button" class="danger" (click)="desactiverCompte(compte)">Désactiver</button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="8" class="empty">
+                    <div>Aucun compte bancaire.</div>
+                    <button type="button" class="primary" (click)="nouveauCompte()">Créer un compte bancaire</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+
+        @if (modeCompte() === 'detail' && compteSelectionne(); as compte) {
+          <div class="detail">
+            <dl>
+              <div><dt>Nom du compte</dt><dd>{{ compte.nomCompte }}</dd></div>
+              <div><dt>Banque</dt><dd>{{ compte.banque }}</dd></div>
+              <div><dt>IBAN</dt><dd>{{ compte.iban || '-' }}</dd></div>
+              <div><dt>BIC</dt><dd>{{ compte.bic || '-' }}</dd></div>
+              <div><dt>Devise</dt><dd>{{ compte.devise }}</dd></div>
+              <div><dt>Solde initial</dt><dd>{{ montant(compte.soldeInitial) }}</dd></div>
+              <div><dt>Date solde initial</dt><dd>{{ compte.dateSoldeInitial || '-' }}</dd></div>
+              <div><dt>Solde actuel</dt><dd>{{ montant(compte.soldeActuel) }}</dd></div>
+              <div><dt>Statut</dt><dd>{{ compte.actif ? 'Actif' : 'Inactif' }}</dd></div>
+              <div><dt>Date création</dt><dd>{{ compte.dateCreation }}</dd></div>
+              <div><dt>Date modification</dt><dd>{{ compte.dateModification }}</dd></div>
+            </dl>
+            <div class="form-actions">
+              <button type="button" class="primary" (click)="modifierCompte(compte)">Modifier</button>
+              <button type="button" (click)="retourListeComptes()">Retour</button>
+            </div>
+          </div>
+        }
+
+        @if (modeCompte() === 'creation' || modeCompte() === 'modification') {
+          <form class="account-form" [formGroup]="formulaireCompte" (ngSubmit)="enregistrerCompte()">
+            <div class="form-grid">
+              <label>
+                <span>Nom du compte</span>
+                <input type="text" formControlName="nomCompte" />
+                @if (champCompteInvalide('nomCompte')) { <small>Nom du compte obligatoire.</small> }
+              </label>
+              <label>
+                <span>Banque</span>
+                <input type="text" formControlName="banque" />
+                @if (champCompteInvalide('banque')) { <small>Banque obligatoire.</small> }
+              </label>
+              <label>
+                <span>IBAN</span>
+                <input type="text" formControlName="iban" />
+                @if (champCompteInvalide('iban')) { <small>IBAN obligatoire.</small> }
+              </label>
+              <label>
+                <span>BIC</span>
+                <input type="text" formControlName="bic" />
+              </label>
+              <label>
+                <span>Devise</span>
+                <input type="text" maxlength="3" formControlName="devise" />
+                @if (champCompteInvalide('devise')) { <small>Devise obligatoire.</small> }
+              </label>
+              <label>
+                <span>Solde initial</span>
+                <input type="number" step="0.01" formControlName="soldeInitial" />
+                @if (champCompteInvalide('soldeInitial')) { <small>Solde initial numérique obligatoire.</small> }
+              </label>
+              <label>
+                <span>Date solde initial</span>
+                <input type="date" formControlName="dateSoldeInitial" />
+              </label>
+              <label class="check">
+                <input type="checkbox" formControlName="actif" />
+                <span>Actif</span>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="primary">Enregistrer</button>
+              <button type="button" (click)="annulerCompte()">Annuler</button>
+            </div>
+          </form>
+        }
+      }
+      @case ('imports') {
+        <div class="import-layout">
+          <section class="import-box">
+            <label>
+              <span>Compte bancaire</span>
+              <select [value]="compteImportId() ?? ''" (change)="choisirCompteImport($any($event.target).value)">
+                @for (compte of comptes(); track compte.id) {
+                  <option [value]="compte.id">{{ compte.displayName }}</option>
+                }
+              </select>
+            </label>
+            <div class="dropzone" (dragover)="$event.preventDefault()" (drop)="deposerFichier($event)">
+              <strong>{{ fichierImport()?.name || 'Glisser-déposer un relevé CSV, XLS ou XLSX' }}</strong>
+              <label class="file-button">
+                <input type="file" accept=".csv,.xls,.xlsx" (change)="choisirFichier($event)" />
+                <span>Parcourir</span>
+              </label>
+            </div>
+            <button type="button" class="primary" (click)="importerReleve()">Importer</button>
+          </section>
+
+          @if (resultatImport(); as resultat) {
+            <section class="import-summary">
+              <div><span>Lignes lues</span><strong>{{ resultat.nombreLignes }}</strong></div>
+              <div><span>Importées</span><strong>{{ resultat.nombreLignesImportees }}</strong></div>
+              <div><span>Rejetées</span><strong>{{ resultat.nombreLignesRejetees }}</strong></div>
+              <div><span>Total débit</span><strong>{{ montant(resultat.totalDebit) }}</strong></div>
+              <div><span>Total crédit</span><strong>{{ montant(resultat.totalCredit) }}</strong></div>
+              <div><span>Statut</span><strong>{{ resultat.statutImport }}</strong></div>
+              @if (resultat.erreurs.length) {
+                <ul>
+                  @for (erreur of resultat.erreurs; track erreur) { <li>{{ erreur }}</li> }
+                </ul>
+              }
+              <button type="button" (click)="voirOperationsImportees()">Voir les opérations importées</button>
+            </section>
+          }
+        </div>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Fichier</th><th>Compte</th><th>Format</th><th>Statut</th><th class="right">Lignes</th><th class="right">Rejetées</th></tr>
+          </thead>
+          <tbody>
+            @for (importReleve of imports(); track importReleve.id) {
+              <tr>
+                <td>{{ importReleve.dateImport }}</td>
+                <td>{{ importReleve.nomFichier }}</td>
+                <td>{{ importReleve.compteBancaireLibelle }}</td>
+                <td>{{ importReleve.typeFichier }}</td>
+                <td>{{ importReleve.statutImport }}</td>
+                <td class="right">{{ importReleve.nombreLignesImportees }}</td>
+                <td class="right">{{ importReleve.nombreLignesRejetees }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="7" class="empty">Aucun import de relevé.</td></tr>
+            }
+          </tbody>
+        </table>
+      }
+      @case ('operations') {
+        <div class="operations-tools">
+          <div class="filters">
+            <label>
+              Tiers reconnu
+              <input type="search" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)">
+            </label>
+            <label>
+              Type tiers
+              <select [value]="filtresOperations().typeTiersReconnu || ''" (change)="filtrerOperations('typeTiersReconnu', $any($event.target).value)">
+                <option value="">Tous</option>
+                @for (type of typesTiers; track type) {
+                  <option [value]="type">{{ type }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Nature opération
+              <select [value]="filtresOperations().natureOperation || ''" (change)="filtrerOperations('natureOperation', $any($event.target).value)">
+                <option value="">Toutes</option>
+                @for (nature of naturesOperation; track nature) {
+                  <option [value]="nature">{{ libelleNature(nature) }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Statut classification
+              <select [value]="filtresOperations().statutClassification || ''" (change)="filtrerOperations('statutClassification', $any($event.target).value)">
+                <option value="">Tous</option>
+                @for (statut of statutsClassification; track statut) {
+                  <option [value]="statut">{{ libelleStatutClassification(statut) }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              Statut rapprochement
+              <select [value]="filtresOperations().statutRapprochement || ''" (change)="filtrerOperations('statutRapprochement', $any($event.target).value)">
+                <option value="">Tous</option>
+                @for (statut of statutsRapprochement; track statut) {
+                  <option [value]="statut">{{ statut }}</option>
+                }
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" class="primary" (click)="nouvelleOperation()">Nouvelle transaction</button>
+            <button type="button" (click)="reinitialiserFiltresOperations()">Réinitialiser</button>
+            <button type="button" class="primary" (click)="calculerNomTiersOperationsNonRapprochees()">Calcul nom tiers</button>
+            <button type="button" class="primary" (click)="rapprocherFactures()">Rapprochement factures et documents</button>
+            <button type="button" class="primary" (click)="rapprocherSalaires()">Rapprochement salaires</button>
+            <button type="button" class="primary" (click)="rapprocherNotesFrais()">Rapprochement notes de frais</button>
+            <button type="button" class="primary" [disabled]="operationsPieceRapprochementPossibles().length === 0" (click)="creerFacturesRapprochementPossibles()">
+              Pièces de rapprochement ({{ operationsPieceRapprochementPossibles().length }})
+            </button>
+          </div>
+        </div>
+        @if (modeOperation() === 'creation' || modeOperation() === 'modification') {
+          <form class="operation-form" [formGroup]="formulaireOperation" (ngSubmit)="enregistrerOperation()">
+            <h3>{{ modeOperation() === 'modification' ? 'Modifier la transaction' : 'Nouvelle transaction' }}</h3>
+            <div class="form-grid">
+              <label>
+                <span>Compte bancaire</span>
+                <select formControlName="compteBancaireId">
+                  <option [ngValue]="null">Sélectionner</option>
+                  @for (compte of comptes(); track compte.id) {
+                    <option [ngValue]="compte.id">{{ compte.displayName }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('compteBancaireId')) { <small>Compte obligatoire.</small> }
+              </label>
+              <label>
+                <span>Date opération</span>
+                <input type="date" formControlName="dateOperation" />
+                @if (champOperationInvalide('dateOperation')) { <small>Date obligatoire.</small> }
+              </label>
+              <label>
+                <span>Date valeur</span>
+                <input type="date" formControlName="dateValeur" />
+              </label>
+              <label>
+                <span>Libellé</span>
+                <input type="text" formControlName="libelle" />
+                @if (champOperationInvalide('libelle')) { <small>Libellé obligatoire.</small> }
+              </label>
+              <label>
+                <span>Référence bancaire</span>
+                <input type="text" formControlName="referenceBancaire" />
+              </label>
+              <label>
+                <span>Sens</span>
+                <select formControlName="sens">
+                  @for (sens of sensOperations; track sens) {
+                    <option [value]="sens">{{ sens }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('sens')) { <small>Sens obligatoire.</small> }
+              </label>
+              <label>
+                <span>Montant</span>
+                <input type="number" min="0" step="0.01" formControlName="montant" />
+                @if (champOperationInvalide('montant')) { <small>Montant obligatoire.</small> }
+              </label>
+              <label>
+                <span>Type opération</span>
+                <select formControlName="typeOperation">
+                  @for (type of typesOperation; track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('typeOperation')) { <small>Type obligatoire.</small> }
+              </label>
+              <label>
+                <span>Tiers reconnu</span>
+                <input type="text" formControlName="tiersReconnu" />
+              </label>
+              <label>
+                <span>Type tiers</span>
+                <select formControlName="typeTiersReconnu">
+                  <option value="">-</option>
+                  @for (type of typesTiers; track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                <span>Nature opération</span>
+                <select formControlName="natureOperation">
+                  @for (nature of naturesOperation; track nature) {
+                    <option [value]="nature">{{ libelleNature(nature) }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('natureOperation')) { <small>Nature obligatoire.</small> }
+              </label>
+              <label>
+                <span>Statut classification</span>
+                <select formControlName="statutClassification">
+                  @for (statut of statutsClassification; track statut) {
+                    <option [value]="statut">{{ libelleStatutClassification(statut) }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('statutClassification')) { <small>Statut obligatoire.</small> }
+              </label>
+              <label>
+                <span>Statut rapprochement</span>
+                <select formControlName="statutRapprochement">
+                  @for (statut of statutsRapprochement; track statut) {
+                    <option [value]="statut">{{ statut }}</option>
+                  }
+                </select>
+                @if (champOperationInvalide('statutRapprochement')) { <small>Statut obligatoire.</small> }
+              </label>
+              <label>
+                <span>Tiers ID</span>
+                <input type="number" min="1" step="1" formControlName="tiersId" />
+              </label>
+              <label>
+                <span>Facture ID</span>
+                <input type="number" min="1" step="1" formControlName="factureId" />
+              </label>
+              <label>
+                <span>Type facture</span>
+                <select formControlName="typeFacture">
+                  <option value="">-</option>
+                  @for (type of typesFacture; track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="primary">Enregistrer</button>
+              <button type="button" (click)="annulerOperation()">Annuler</button>
+            </div>
+          </form>
+        }
+        <div class="table-scroll-container">
+          <table class="operations-table">
+            <thead>
+              <tr>
+                <th class="date-column nowrap sticky-date"><button type="button" class="sort-button" (click)="trierOperations('dateOperation')">Date opération <span>{{ indicateurTriOperations('dateOperation') }}</span></button></th>
+                <th class="libelle-column sticky-libelle"><button type="button" class="sort-button" (click)="trierOperations('libelle')">Libellé <span>{{ indicateurTriOperations('libelle') }}</span></button></th>
+                <th class="compte-column"><button type="button" class="sort-button" (click)="trierOperations('compte')">Compte <span>{{ indicateurTriOperations('compte') }}</span></button></th>
+                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('debit')">Débit <span>{{ indicateurTriOperations('debit') }}</span></button></th>
+                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('credit')">Crédit <span>{{ indicateurTriOperations('credit') }}</span></button></th>
+                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('montant')">Montant <span>{{ indicateurTriOperations('montant') }}</span></button></th>
+                <th class="sens-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('sens')">Sens <span>{{ indicateurTriOperations('sens') }}</span></button></th>
+                <th class="type-operation-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('typeOperation')">Type opération <span>{{ indicateurTriOperations('typeOperation') }}</span></button></th>
+                <th class="tiers-column"><button type="button" class="sort-button" (click)="trierOperations('tiersReconnu')">Tiers reconnu <span>{{ indicateurTriOperations('tiersReconnu') }}</span></button></th>
+                <th class="type-tiers-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('typeTiersReconnu')">Type tiers <span>{{ indicateurTriOperations('typeTiersReconnu') }}</span></button></th>
+                <th class="nature-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('natureOperation')">Nature opération <span>{{ indicateurTriOperations('natureOperation') }}</span></button></th>
+                <th class="status-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('statutClassification')">Statut classification <span>{{ indicateurTriOperations('statutClassification') }}</span></button></th>
+                <th class="status-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('statutRapprochement')">Statut rapprochement <span>{{ indicateurTriOperations('statutRapprochement') }}</span></button></th>
+                <th class="rapprochement-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('libelleRapprochement')">Libellé rapprochement <span>{{ indicateurTriOperations('libelleRapprochement') }}</span></button></th>
+                <th class="actions-column">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (operation of operationsPage(); track operation.id) {
+                <tr>
+                  <td class="nowrap sticky-date">{{ operation.dateOperation }}</td>
+                  <td class="libelle-column sticky-libelle">{{ operation.libelle }}</td>
+                  <td>{{ operation.compteBancaireLibelle }}</td>
+                  <td class="right nowrap">{{ montant(operation.debit) }}</td>
+                  <td class="right nowrap">{{ montant(operation.credit) }}</td>
+                  <td class="right nowrap">{{ montant(operation.montant) }}</td>
+                  <td class="nowrap">{{ operation.sens }}</td>
+                  <td class="nowrap">{{ operation.typeOperation }}</td>
+                  <td>@if (operation.tiersId) { <button type="button" class="link-button" (click)="ouvrirTiers(operation.tiersId, operation.tiersReconnu)">{{ operation.tiersReconnu || ('Tiers ' + operation.tiersId) }}</button> } @else { {{ operation.tiersReconnu || '-' }} }</td>
+                  <td class="nowrap">{{ operation.typeTiersReconnu || '-' }}</td>
+                  <td class="nowrap">
+                    <select class="inline-select" [value]="operation.natureOperation" (change)="modifierNatureOperation(operation, $any($event.target).value)">
+                      @for (nature of naturesOperation; track nature) {
+                        <option [value]="nature">{{ libelleNature(nature) }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td class="nowrap">
+                    <span class="badge" [class.warning]="operation.statutClassification === 'A_VERIFIER'" [class.muted]="operation.statutClassification === 'NON_CLASSEE'">
+                      {{ libelleStatutClassification(operation.statutClassification) }}
+                    </span>
+                  </td>
+                  <td class="nowrap"><span class="badge muted">{{ operation.statutRapprochement }}</span></td>
+                  <td>{{ operation.libelleRapprochement || '-' }}</td>
+                  <td class="actions-column">
+                    <div class="actions">
+                      <button type="button" (click)="voirOperation(operation)">Voir</button>
+                      <button type="button" (click)="modifierOperation(operation)">Modifier</button>
+                      <button type="button" (click)="retraiterOperation(operation)">Recalculer</button>
+                      @if (operation.statutRapprochement !== 'RAPPROCHEE') {
+                        <button type="button" class="primary"
+                          [disabled]="!rapprochementManuelPossible(operation)"
+                          [title]="rapprochementManuelPossible(operation) ? '' : 'Un tiers fournisseur (débit) ou client (crédit) doit être reconnu'"
+                          (click)="ouvrirRapprochementManuel(operation)">
+                          {{ operation.statutRapprochement === 'PARTIELLEMENT_RAPPROCHEE' ? 'Ajouter une facture' : 'Rapprocher manuellement' }}
+                        </button>
+                      }
+                      @if (noteFraisRapprochementPossible(operation)) {
+                        <button type="button" (click)="rapprocherNoteFrais(operation)">Rapprocher note de frais</button>
+                      }
+                      @if (salaireRapprochementPossible(operation)) {
+                        <button type="button" (click)="rapprocherSalaire(operation)">Rapprocher avec un salaire</button>
+                      }
+                      @if (pieceRapprochementPossible(operation)) {
+                        <button type="button" (click)="creerFactureRapprochement(operation)">Créer une pièce de rapprochement</button>
+                      }
+                      <button type="button" class="danger" (click)="supprimerOperation(operation)">Supprimer</button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="15" class="empty">Aucune opération bancaire.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="table-pagination" aria-label="Pagination des opérations bancaires">
+          <div class="pagination-summary">
+            {{ totalOperations() }} ligne(s)
+            @if (totalOperations() > 0) {
+              <span> - {{ debutOperations() }} à {{ finOperations() }}</span>
+            }
+          </div>
+          <label class="page-size">
+            Lignes par page
+            <select [value]="taillePageOperations()" (change)="changerTaillePageOperations($any($event.target).value)">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <div class="pagination-actions">
+            <button type="button" [disabled]="pageOperations() <= 1" (click)="pagePrecedenteOperations()">Précédent</button>
+            <span>Page {{ pageOperations() }} / {{ totalPagesOperations() }}</span>
+            <button type="button" [disabled]="pageOperations() >= totalPagesOperations()" (click)="pageSuivanteOperations()">Suivant</button>
+          </div>
+        </div>
+      }
+      @case ('pieces-rapprochement') {
+        <div class="rapprochement-tools"><h3>Pièces de rapprochement non commerciales</h3></div>
+        <div class="table-scroll-container">
+          <table><thead><tr><th>Numéro</th><th>Type</th><th>Tiers</th><th>Date</th><th>Libellé</th><th class="right">Montant</th><th>Statut</th><th>Opération bancaire</th><th>Libellé rapprochement</th></tr></thead>
+          <tbody>
+            @for (piece of piecesRapprochement(); track piece.id) {
+              <tr><td><strong>{{ piece.numero }}</strong></td><td>{{ piece.type }}</td><td>{{ piece.tiers }}</td><td>{{ piece.date }}</td><td>{{ piece.libelle }}</td><td class="right nowrap">{{ montant(piece.montant) }}</td><td><span class="badge">{{ piece.statut }}</span></td><td>OP-{{ piece.operationBancaireId }}</td><td>{{ piece.libelleRapprochement }}</td></tr>
+            } @empty { <tr><td colspan="9" class="empty">Aucune pièce de rapprochement non commerciale.</td></tr> }
+          </tbody></table>
+        </div>
+      }
+      @case ('rapprochements') {
+        <div class="rapprochement-tools">
+          <h3>Rapprochements</h3>
+          <div class="actions">
+            <button type="button" class="primary" [disabled]="rapprochementsProposes().length === 0" (click)="validerToutesPropositions()">
+              Valider toutes les propositions
+            </button>
+            <button type="button" class="danger" [disabled]="rapprochementsProposes().length === 0" (click)="annulerToutesPropositions()">
+              Annuler toutes les propositions
+            </button>
+          </div>
+        </div>
+        <div class="table-scroll-container">
+          <table class="rapprochements-table">
+            <thead>
+              <tr>
+                <th>Opération bancaire</th>
+                <th>Tiers reconnu</th>
+                <th>Pièce associée</th>
+                <th class="right">Montant opération</th>
+                <th class="right">Montant facture</th>
+                <th class="right">Score matching</th>
+                <th>Statut</th>
+                <th class="actions-column">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (rapprochement of rapprochements(); track rapprochement.id) {
+                <tr>
+                  <td>
+                    <strong>{{ rapprochement.operationLibelle }}</strong>
+                    <span>{{ rapprochement.libelleRapprochement || '-' }}</span>
+                  </td>
+                  <td>{{ rapprochement.tiersReconnu || '-' }}</td>
+                  <td>@if (rapprochement.factureId && rapprochement.typeFacture) { <button type="button" class="link-button" (click)="ouvrirFacture(rapprochement.factureId, rapprochement.typeFacture, rapprochement.documentAssocieNumero)"><strong>{{ rapprochement.documentAssocieNumero || (rapprochement.typeFacture + ' ' + rapprochement.factureId) }}</strong></button> } @else { <strong>{{ rapprochement.documentAssocieNumero || rapprochement.typePiece || '-' }}</strong> }<span>{{ rapprochement.documentAssocieLibelle || rapprochement.typePiece || '-' }}</span></td>
+                  <td class="right nowrap">{{ montant(rapprochement.montantOperation) }}</td>
+                  <td class="right nowrap">{{ montant(rapprochement.montantRapproche) }}</td>
+                  <td class="right nowrap">{{ rapprochement.scoreMatching ?? '-' }}</td>
+                  <td class="nowrap">
+                    <span class="badge" [class.warning]="rapprochement.statut === 'PROPOSE'" [class.muted]="rapprochement.statut === 'ANNULE'">
+                      {{ rapprochement.statut }}
+                    </span>
+                  </td>
+                  <td class="actions-column">
+                    <div class="actions">
+                      <button type="button" class="primary" [disabled]="!actionRapprochementPossible(rapprochement)" (click)="validerRapprochement(rapprochement)">Valider</button>
+                      <button type="button" class="danger" [disabled]="!actionRapprochementPossible(rapprochement)" (click)="annulerRapprochement(rapprochement)">Annuler</button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="8" class="empty">Aucun rapprochement bancaire.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="grid">
+          <div>
+            <h3>Règles</h3>
+            <table>
+              <thead>
+                <tr><th>Libellé</th><th>Motif</th><th>Sens</th><th class="right">Priorité</th></tr>
+              </thead>
+              <tbody>
+                @for (regle of regles(); track regle.id) {
+                  <tr>
+                    <td>{{ regle.libelle }}</td>
+                    <td>{{ regle.motif || '-' }}</td>
+                    <td>{{ regle.sens || '-' }}</td>
+                    <td class="right">{{ regle.priorite }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="4" class="empty">Aucune règle.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+      @case ('factures-echeances') {
+        @if (kpisEcheances(); as k) {
+          <div class="metrics">
+            <article><span>À encaisser</span><strong>{{ montant(k.aEncaisser) }}</strong></article>
+            <article><span>À payer</span><strong>{{ montant(k.aPayer) }}</strong></article>
+            <article><span>Retard clients</span><strong>{{ montant(k.retardClients) }}</strong></article>
+            <article><span>Retard fournisseurs</span><strong>{{ montant(k.retardFournisseurs) }}</strong></article>
+          </div>
+        }
+        <div class="tabs" role="tablist">
+          @for (vue of vuesEcheances; track vue) {
+            <button type="button" [class.active]="vueEcheances() === vue" (click)="changerVueEcheances(vue)">
+              {{ vue === 'TOUTES' ? 'Toutes' : vue === 'A_ENCAISSER' ? 'À encaisser' : vue === 'A_PAYER' ? 'À payer' : vue === 'EN_RETARD' ? 'En retard' : 'Partiellement payées' }}
+            </button>
+          }
+        </div>
+        <div class="filters">
+          <label>Échéance début <input type="date" [value]="filtresEcheances().dateDebut || ''" (change)="filtreEcheance('dateDebut', $event)"></label>
+          <label>Échéance fin <input type="date" [value]="filtresEcheances().dateFin || ''" (change)="filtreEcheance('dateFin', $event)"></label>
+          <label>Type <select [value]="filtresEcheances().typeFacture || ''" (change)="filtreEcheance('typeFacture', $event)"><option value="">Tous</option><option value="VENTE">Vente</option><option value="ACHAT">Achat</option></select></label>
+          <label>Statut <select [value]="filtresEcheances().statut || ''" (change)="filtreEcheance('statut', $event)"><option value="">Tous</option><option value="A_ECHOIR">À échoir</option><option value="ECHEANCE_AUJOURD_HUI">Aujourd’hui</option><option value="EN_RETARD">En retard</option><option value="PARTIELLEMENT_PAYEE">Partiellement payée</option></select></label>
+          <label>Montant min. <input type="number" min="0" [value]="filtresEcheances().montantMinimum || ''" (change)="filtreEcheance('montantMinimum', $event)"></label>
+          <label>Montant max. <input type="number" min="0" [value]="filtresEcheances().montantMaximum || ''" (change)="filtreEcheance('montantMaximum', $event)"></label>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Sens</th><th>N° facture</th><th>Tiers</th><th>Date facture</th><th>Date échéance</th><th class="right">Montant TTC</th><th class="right">Déjà payé</th><th class="right">Reste à payer</th><th class="right">Jours de retard</th><th>Statut</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            @for (facture of factures(); track facture.typeFacture + '-' + facture.factureId) {
+              <tr>
+                <td>{{ facture.sensTresorerie === 'A_ENCAISSER' ? 'À encaisser' : 'À payer' }}</td>
+                <td><button type="button" class="link-button" (click)="ouvrirFacture(facture.factureId, facture.typeFacture, facture.numeroFacture)">{{ facture.numeroFacture }}</button></td><td>@if (facture.tiersId) { <button type="button" class="link-button" (click)="ouvrirTiers(facture.tiersId, facture.tiersRaisonSociale)">{{ facture.tiersRaisonSociale || ('Tiers ' + facture.tiersId) }}</button> } @else { - }</td>
+                <td>{{ dateFr(facture.dateFacture) }}</td><td>{{ dateFr(facture.dateEcheance) }}</td>
+                <td class="right">{{ montant(facture.montantTtc) }}</td><td class="right">{{ montant(facture.montantDejaPaye) }}</td>
+                <td class="right">{{ montant(facture.resteAPayer) }}</td><td class="right">{{ facture.joursRetard }}</td>
+                <td>{{ libelleStatutEcheance(facture.statutEcheance) }}</td>
+                <td><button type="button" class="link-button" (click)="ouvrirFacture(facture.factureId, facture.typeFacture, facture.numeroFacture)">Voir la facture</button></td>
+              </tr>
+            } @empty {
+              <tr><td colspan="11" class="empty">Aucune facture ouverte pour ces critères.</td></tr>
+            }
+          </tbody>
+        </table>
+        <div class="pagination">
+          <button type="button" (click)="pageEcheances(-1)" [disabled]="filtresEcheances().page === 0">Précédent</button>
+          <span>{{ totalFactures() }} facture(s) · page {{ filtresEcheances().page + 1 }}</span>
+          <select [value]="filtresEcheances().size" (change)="filtreEcheance('size', $event)"><option>10</option><option>25</option><option>50</option><option>100</option></select>
+          <button type="button" (click)="pageEcheances(1)" [disabled]="(filtresEcheances().page + 1) * filtresEcheances().size >= totalFactures()">Suivant</button>
+        </div>
+      }
+      @case ('balance-agee') {
+        @if (balance(); as b) {
+          <div class="metrics">
+            <article><span>Non échu</span><strong>{{ montant(b.nonEchu) }}</strong></article>
+            <article><span>1 à 30 jours</span><strong>{{ montant(b.retard0A30) }}</strong></article>
+            <article><span>31 à 60 jours</span><strong>{{ montant(b.retard31A60) }}</strong></article>
+            <article><span>61 à 90 jours</span><strong>{{ montant(b.retard61A90) }}</strong></article>
+            <article><span>+90 jours</span><strong>{{ montant(b.retardPlus90) }}</strong></article>
+          </div>
+        }
+      }
+      @case ('previsionnel') {
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Flux prévu</th><th>Sens</th><th>Statut</th><th class="right">Montant</th></tr>
+          </thead>
+          <tbody>
+            @for (operation of operations(); track operation.id) {
+              <tr>
+                <td>{{ operation.dateOperation }}</td>
+                <td>{{ operation.libelle }}</td>
+                <td>{{ operation.sens }}</td>
+                <td>{{ operation.statutRapprochement }}</td>
+                <td class="right">{{ montant(operation.montant) }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="empty">Aucun flux prévisionnel.</td></tr>
+            }
+          </tbody>
+        </table>
+      }
+    }
+
+    @if (operationRapprochementManuel(); as operation) {
+      <div class="modal-backdrop" (click)="fermerRapprochementManuel()">
+        <section class="manual-match-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+          <header>
+            <div><h2>Rapprochement manuel</h2><p>{{ operation.libelle }} · {{ operation.tiersReconnu }}</p></div>
+            <button type="button" (click)="fermerRapprochementManuel()">Fermer</button>
+          </header>
+          <div class="manual-summary">
+            <span>Montant opération <strong>{{ montant(montantOperationManuel()) }}</strong></span>
+            <span>Total sélectionné <strong>{{ montant(totalRapprochementManuel()) }}</strong></span>
+            <span>Reste à rapprocher <strong>{{ montant(resteRapprochementManuel()) }}</strong></span>
+          </div>
+          <div class="table-scroll-container">
+            <table>
+              <thead><tr><th>Sélection</th><th>N° facture</th><th>Date</th><th>Échéance</th><th class="right">Reste à payer</th><th class="right">Montant à rapprocher</th></tr></thead>
+              <tbody>
+                @for (facture of candidatesRapprochement(); track facture.id) {
+                  <tr>
+                    <td><input type="checkbox" [checked]="facture.selectionnee" (change)="selectionnerCandidate(facture.id, $any($event.target).checked)"></td>
+                    <td>{{ facture.numeroFacture }}</td><td>{{ facture.dateFacture }}</td><td>{{ facture.dateEcheance || '-' }}</td>
+                    <td class="right">{{ montant(facture.resteAPayer) }}</td>
+                    <td class="right"><input class="amount-input" type="number" min="0.01" step="0.01" [max]="facture.resteAPayer" [disabled]="!facture.selectionnee" [value]="facture.montantRapproche" (input)="modifierMontantCandidate(facture.id, $any($event.target).value)"></td>
+                  </tr>
+                } @empty { <tr><td colspan="6" class="empty">Aucune facture ouverte pour ce tiers.</td></tr> }
+              </tbody>
+            </table>
+          </div>
+          <footer class="form-actions">
+            <button type="button" class="primary" [disabled]="totalRapprochementManuel() <= 0 || totalRapprochementManuel() > montantOperationManuel() + 0.01" (click)="validerRapprochementManuel()">Valider le rapprochement</button>
+            <button type="button" (click)="fermerRapprochementManuel()">Annuler</button>
+          </footer>
+        </section>
+      </div>
+    }
+  </section>
+</section>

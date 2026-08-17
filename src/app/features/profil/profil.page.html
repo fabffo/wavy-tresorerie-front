@@ -1,0 +1,99 @@
+<section class="page-shell">
+  <div class="d-flex align-items-start justify-content-between gap-3 mb-4">
+    <div>
+      <h1 class="h3 mb-1">Mon profil</h1>
+      <p class="text-secondary mb-0">Informations utilisateur et contexte courant fournis par le socle.</p>
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger" role="alert">{{ error() }}</div>
+  }
+
+  @if (loading()) {
+    <div class="alert alert-info" role="status">Chargement du profil...</div>
+  }
+
+  <div class="row g-4">
+    <div class="col-12 col-lg-6">
+      <section class="panel h-100">
+        <h2 class="h5 mb-3">Utilisateur</h2>
+        <dl class="detail-grid">
+          <dt>Email</dt>
+          <dd>{{ contexteService.email() ?? authService.authenticatedUser() ?? '-' }}</dd>
+
+          <dt>Nom</dt>
+          <dd>{{ contexteService.nom() || '-' }}</dd>
+
+          <dt>Prenom</dt>
+          <dd>{{ contexteService.prenom() || '-' }}</dd>
+
+          <dt>UtilisateurId</dt>
+          <dd>{{ contexteService.utilisateurId() ?? '-' }}</dd>
+
+          <dt>Tenant</dt>
+          <dd>{{ contexteService.tenantNom() || '-' }} ({{ contexteService.tenantId() ?? '-' }})</dd>
+
+          <dt>Societe courante</dt>
+          <dd>{{ contexteService.societeCouranteNom() || '-' }} ({{ contexteService.societeCouranteId() ?? '-' }})</dd>
+        </dl>
+      </section>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <section class="panel h-100">
+        <h2 class="h5 mb-3">Roles</h2>
+        <div class="d-flex flex-wrap gap-2">
+          @for (role of contexteService.roles(); track role) {
+            <span class="badge text-bg-primary">{{ role }}</span>
+          } @empty {
+            <span class="text-secondary">Aucun role retourne.</span>
+          }
+        </div>
+      </section>
+    </div>
+
+    <div class="col-12">
+      <section class="panel">
+        <h2 class="h5 mb-3">Societes autorisees</h2>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">Id</th>
+                <th scope="col">Libelle</th>
+                <th scope="col">Courante</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (societe of contexteService.societesAutorisees(); track societe.id) {
+                <tr>
+                  <td>{{ societe.id }}</td>
+                  <td>{{ contexteService.libelleSociete(societe) }}</td>
+                  <td>
+                    @if (societe.id === contexteService.societeCouranteId()) {
+                      <span class="badge text-bg-success">Oui</span>
+                    } @else {
+                      -
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td class="text-secondary py-3" colspan="3">Aucune societe autorisee retournee.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-12">
+      <section class="panel">
+        <h2 class="h5 mb-3">Reponse /api/profil</h2>
+        <pre class="profile-json mb-0">{{ json(profil()) }}</pre>
+      </section>
+    </div>
+  </div>
+</section>
