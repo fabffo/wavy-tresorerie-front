@@ -6,13 +6,14 @@ body {
 }
 
 .app-main {
-  min-height: calc(100vh - 57px);
+  min-height: 0;
 }
 
 .page-shell {
-  max-width: 1360px;
+  max-width: none;
+  width: 100%;
   margin: 0 auto;
-  padding: 20px 16px;
+  padding: 24px;
 }
 
 .page-shell.narrow {
@@ -333,3 +334,12 @@ body {
     margin-bottom: 12px;
   }
 }
+
+/* Grid children must shrink before their tables scroll horizontally. */
+.page-shell,.panel,.tiers-layout>*,.contrats-layout>*,.tresorerie-layout>*{min-width:0}
+.table-responsive{width:100%;max-width:100%;min-width:0}
+
+/* Router outlet is only an anchor. The routed host fills its main, not its contents. */
+.app-main>router-outlet{display:none}
+.app-main>:not(router-outlet){display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+.app-main>:not(router-outlet)>:is(.page-shell,.page-stack,.page){flex:1;min-width:0;align-content:start}

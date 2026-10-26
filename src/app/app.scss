@@ -1,1 +1,5 @@
 .wavy-readonly :is(button[type="submit"], .danger, .primary, a[href*="nouveau"], a[href*="modifier"]) { display: none !important; }
+
+/* Own the iframe viewport; keep natural content height and a single document scroll. */
+:host{display:flex;flex-direction:column;inline-size:100%;min-inline-size:0;min-block-size:100dvh}
+.app-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;inline-size:100%}
