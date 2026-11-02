@@ -1,3 +1,4 @@
+import { restaurerFiltresEcheances, memoriserFiltresEcheances } from '../../../shared/filters/echeances-filters';
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -105,7 +106,7 @@ export class TresoreriePage implements OnInit {
   readonly regles = signal<RegleRapprochement[]>([]);
   readonly factures = signal<FactureEcheance[]>([]);
   readonly kpisEcheances = signal<KpiEcheances | null>(null);
-  readonly filtresEcheances = signal<FiltresEcheances>({ page: 0, size: 25, sort: 'dateEcheance,asc' });
+  readonly filtresEcheances = signal<FiltresEcheances>(restaurerFiltresEcheances(sessionStorage));
   readonly totalFactures = signal(0);
   readonly vuesEcheances = ['TOUTES', 'A_ENCAISSER', 'A_PAYER', 'EN_RETARD', 'PARTIELLEMENT_PAYEE'] as const;
   readonly vueEcheances = signal<(typeof this.vuesEcheances)[number]>('TOUTES');
@@ -193,8 +194,9 @@ export class TresoreriePage implements OnInit {
       if (this.onglet() === 'factures-echeances') {
         const vue = params.get('vueEcheances');
         if (this.vuesEcheances.includes(vue as (typeof this.vuesEcheances)[number])) this.vueEcheances.set(vue as (typeof this.vuesEcheances)[number]);
-        this.filtresEcheances.set({
-          dateDebut: params.get('dateDebut') || undefined, dateFin: params.get('dateFin') || undefined,
+        const depuisUrl: FiltresEcheances = {
+          dateDebut: params.has('dateDebut') ? params.get('dateDebut') || undefined : this.filtresEcheances().dateDebut,
+          dateFin: params.has('dateFin') ? params.get('dateFin') || undefined : this.filtresEcheances().dateFin,
           typeFacture: params.get('typeFacture') || undefined, tiersId: this.nombreParam(params.get('tiersId')),
           statut: params.get('statut') || undefined, enRetard: params.get('enRetard') === 'true' || undefined,
           partiellementPayees: params.get('partiellementPayees') === 'true' || undefined,
@@ -202,7 +204,13 @@ export class TresoreriePage implements OnInit {
           montantMinimum: this.nombreParam(params.get('montantMinimum')), montantMaximum: this.nombreParam(params.get('montantMaximum')),
           page: this.nombreParam(params.get('page')) ?? 0, size: this.nombreParam(params.get('size')) ?? 25,
           sort: params.get('sort') || 'dateEcheance,asc',
-        });
+        };
+        const fusion = { ...this.filtresEcheances() };
+        for (const key of Object.keys(depuisUrl) as (keyof FiltresEcheances)[]) {
+          if (params.has(key)) Object.assign(fusion, { [key]: depuisUrl[key] });
+        }
+        this.filtresEcheances.set(fusion);
+        memoriserFiltresEcheances(sessionStorage, fusion);
       }
       this.charger();
     });
@@ -367,7 +375,8 @@ export class TresoreriePage implements OnInit {
 
   private appliquerFiltresEcheances(filtres: FiltresEcheances): void {
     this.filtresEcheances.set(filtres);
-    this.router.navigate([], { relativeTo: this.route, queryParams: { ...filtres, vueEcheances: this.vueEcheances() }, queryParamsHandling: 'merge', replaceUrl: true });
+    memoriserFiltresEcheances(sessionStorage, filtres);
+    this.router.navigate([], { relativeTo: this.route, queryParams: { ...filtres, dateDebut: filtres.dateDebut || '', dateFin: filtres.dateFin || '', vueEcheances: this.vueEcheances() }, queryParamsHandling: 'merge', replaceUrl: true });
     this.chargerEcheances();
   }
 
