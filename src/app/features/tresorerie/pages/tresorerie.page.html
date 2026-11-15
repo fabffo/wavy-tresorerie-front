@@ -319,7 +319,8 @@
             <button type="button" class="primary" (click)="calculerNomTiersOperationsNonRapprochees()">Calcul nom tiers</button>
             <button type="button" class="primary" (click)="rapprocherFactures()">Rapprochement factures et documents</button>
             <button type="button" class="primary" (click)="rapprocherSalaires()">Rapprochement salaires</button>
-            <button type="button" class="primary" (click)="rapprocherNotesFrais()">Rapprochement notes de frais</button>
+            <button type="button" class="primary" (click)="rapprocherNotesFrais()">Remboursements de notes de frais</button>
+            <button type="button" class="primary" [disabled]="loading()" (click)="proposerCartes()">Dépenses par carte d’entreprise</button>
             <button type="button" class="primary" [disabled]="operationsPieceRapprochementPossibles().length === 0" (click)="creerFacturesRapprochementPossibles()">
               Pièces de rapprochement ({{ operationsPieceRapprochementPossibles().length }})
             </button>
@@ -443,6 +444,33 @@
               <button type="button" (click)="annulerOperation()">Annuler</button>
             </div>
           </form>
+        }
+        @if (propositionsCartes(); as resultat) {
+          <section aria-label="Propositions dépenses carte">
+            <h3>Dépenses par carte d’entreprise — propositions à confirmer</h3>
+            <p>{{ resultat.operationsExaminees }} opération(s) examinée(s), {{ resultat.piecesExaminees }} pièce(s) ouverte(s),
+              {{ resultat.propositions.length }} proposition(s), {{ resultat.operationsSansMatch }} opération(s) sans correspondance.</p>
+            <p>Aucune validation automatique. Les dates atypiques restent visibles. Un tiers bancaire différent bloque la confirmation.</p>
+            <div class="table-scroll-container">
+              <table>
+                <thead><tr><th>Opération bancaire</th><th>Pièce et fournisseur</th><th>Dates</th><th>Critères</th><th>Confirmation</th></tr></thead>
+                <tbody>
+                  @for (p of resultat.propositions; track p.operationId + '-' + p.factureId) {
+                    <tr>
+                      <td>{{ p.libelleOperation }}<br>{{ montant(p.montantOperation) }}</td>
+                      <td>{{ p.numeroPiece || p.factureId }} — {{ p.nomTiers }}<br>{{ montant(p.montantPiece) }}</td>
+                      <td>Achat bancaire : {{ p.dateAchat || 'absente' }}<br>Dépense : {{ p.dateDepense || 'absente' }}<br>Comptabilisation : {{ p.dateOperation }}</td>
+                      <td>@for (critere of p.criteres; track critere) { <div>{{ critere }}</div> }
+                        @if (p.ambiguite) { <strong>Plusieurs correspondances possibles : choix utilisateur requis.</strong> }
+                        @if (p.conflit) { <strong>Conflit : tiers différent ou autre rapprochement en cours. Actualisez après résolution.</strong> }
+                      </td>
+                      <td><button type="button" [disabled]="loading() || p.conflit" (click)="confirmerCarte(p)">Confirmer ce rapprochement</button></td>
+                    </tr>
+                  } @empty { <tr><td colspan="5">Aucune pièce carte de montant correspondant. Aucun rapprochement effectué.</td></tr> }
+                </tbody>
+              </table>
+            </div>
+          </section>
         }
         <div class="table-scroll-container">
           <table class="operations-table">

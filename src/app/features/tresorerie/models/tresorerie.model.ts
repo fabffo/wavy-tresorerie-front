@@ -334,3 +334,19 @@ export interface BalanceAgee {
   retard61A90: number;
   retardPlus90: number;
 }
+
+export interface PropositionCarte {
+  operationId: number; factureId: number; tiersId: number; numeroPiece: string;
+  libelleOperation: string; nomTiers: string; dateOperation: string; dateAchat: string | null;
+  dateDepense: string | null; montantOperation: number; montantPiece: number;
+  montantRapproche: number; ecart: number; dateAtypique: boolean; commercantReconnu: boolean;
+  affectationRequise: boolean; ambiguite: boolean; conflit: boolean; criteres: string[];
+}
+export interface PropositionsCarteResultat {
+  operationsExaminees: number; piecesExaminees: number; operationsSansMatch: number;
+  propositions: PropositionCarte[];
+}
+export interface ConfirmationCartePayload {
+  factureId: number; tiersConfirme: number; confirmation: boolean;
+  confirmerAffectation: boolean; confirmerDateAtypique: boolean;
+}

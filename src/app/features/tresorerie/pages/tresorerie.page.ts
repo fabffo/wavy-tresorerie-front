@@ -2,13 +2,15 @@ import { restaurerFiltresEcheances, memoriserFiltresEcheances } from '../../../s
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 
 import { TresorerieApiService } from '../../../core/services/tresorerie-api.service';
 import { ContexteService } from '../../../core/services/contexte.service';
 import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge.service';
 import { getHttpErrorMessage } from '../../../shared/http/http-error-message';
 import {
+  PropositionCarte,
+  PropositionsCarteResultat,
   BalanceAgee,
   CompteBancaire,
   CompteBancairePayload,
@@ -85,6 +87,8 @@ export class TresoreriePage implements OnInit {
   readonly comptes = signal<CompteBancaire[]>([]);
   readonly compteSelectionne = signal<CompteBancaire | null>(null);
   readonly modeCompte = signal<ModeCompte>('liste');
+  readonly propositionsCartes = signal<PropositionsCarteResultat | null>(null);
+  private contexteCartes: string | null = null;
   readonly operations = signal<OperationBancaire[]>([]);
   readonly operationSelectionnee = signal<OperationBancaire | null>(null);
   readonly modeOperation = signal<ModeOperation>('liste');
@@ -301,6 +305,8 @@ export class TresoreriePage implements OnInit {
   }
 
   charger(): void {
+    this.propositionsCartes.set(null);
+    this.contexteCartes = null;
     this.loading.set(true);
     this.error.set(null);
     this.api.dashboard().subscribe({
@@ -571,7 +577,7 @@ export class TresoreriePage implements OnInit {
     this.message.set('Rapprochement des opérations avec les factures ouvertes');
     this.api.rapprocherFactures().subscribe({
       next: (resultat) => {
-        this.message.set(`Rapprochement factures : ${resultat.rapprochementsCrees} validé(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
+        this.message.set(`Rapprochement factures : ${resultat.rapprochementsCrees} validé(s), ${resultat.operationsTraitees} opération(s) examinée(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
         this.chargerOperations();
         this.chargerRapprochements();
       },
@@ -589,7 +595,7 @@ export class TresoreriePage implements OnInit {
     this.message.set('Rapprochement des virements avec les salaires');
     this.api.rapprocherSalaires().subscribe({
       next: (resultat) => {
-        this.message.set(`Rapprochement salaires : ${resultat.rapprochementsCrees} validé(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
+        this.message.set(`Rapprochement salaires : ${resultat.rapprochementsCrees} validé(s), ${resultat.operationsTraitees} opération(s) examinée(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
         this.chargerOperations();
         this.chargerRapprochements();
       },
@@ -615,13 +621,70 @@ export class TresoreriePage implements OnInit {
     });
   }
 
+  private cleContexteCartes(): string {
+    return `${this.contexteService.tenantId()}:${this.contexteService.societeCouranteId()}`;
+  }
+
+  proposerCartes(): void {
+    if (this.loading()) return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.error.set(null);
+    this.message.set(null);
+    this.propositionsCartes.set(null);
+    this.contexteCartes = null;
+    this.api.proposerCartes().pipe(finalize(() => this.loading.set(false))).subscribe({
+      next: (resultat) => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.contexteCartes = contexte;
+        this.propositionsCartes.set(resultat);
+        this.message.set(`Dépenses carte : ${resultat.operationsExaminees} opération(s) examinée(s), ${resultat.propositions.length} proposition(s). Aucune validation automatique.`);
+      },
+      error: (e) => this.error.set(getHttpErrorMessage(e)),
+    });
+  }
+
+  confirmerCarte(proposition: PropositionCarte): void {
+    if (this.loading() || proposition.conflit) return;
+    if (this.contexteCartes !== this.cleContexteCartes()) {
+      this.propositionsCartes.set(null);
+      this.error.set('La société a changé. Recherchez de nouveau les propositions carte.');
+      return;
+    }
+    const avertissements = [
+      proposition.ambiguite ? 'Plusieurs correspondances existent : vous choisissez uniquement cette pièce et cette opération.' : '',
+      proposition.affectationRequise ? `Associer le fournisseur ${proposition.nomTiers} (tiers ${proposition.tiersId}) à cette opération et la classer en achat.` : '',
+      proposition.dateAtypique ? 'Date atypique : confirmez avoir vérifié le justificatif.' : '',
+      proposition.ecart > 0 ? 'Un écart de 0,01 sera conservé comme reliquat non soldé.' : '',
+    ].filter(Boolean).join('\n');
+    if (!confirm(`Confirmer la pièce ${proposition.numeroPiece ?? proposition.factureId} (${this.montant(proposition.montantPiece)}) avec l'opération « ${proposition.libelleOperation} » du ${proposition.dateOperation} ?\nFournisseur : ${proposition.nomTiers}. Montant affecté : ${this.montant(proposition.montantRapproche)}.\n${avertissements}`)) return;
+    this.loading.set(true);
+    this.error.set(null);
+    this.message.set(null);
+    this.api.confirmerCarte(proposition.operationId, {
+      factureId: proposition.factureId, tiersConfirme: proposition.tiersId, confirmation: true,
+      confirmerAffectation: proposition.affectationRequise, confirmerDateAtypique: proposition.dateAtypique,
+    }).pipe(finalize(() => this.loading.set(false))).subscribe({
+      next: () => {
+        this.propositionsCartes.set(null);
+        this.message.set('Rapprochement carte confirmé. Relancez la recherche pour actualiser les propositions.');
+        this.chargerOperations();
+        this.chargerRapprochements();
+      },
+      error: (e) => {
+        this.propositionsCartes.set(null);
+        this.error.set(getHttpErrorMessage(e));
+      },
+    });
+  }
+
   rapprocherNotesFrais(): void {
     this.loading.set(true);
     this.error.set(null);
     this.message.set('Rapprochement des remboursements de notes de frais');
     this.api.rapprocherNotesFrais().subscribe({
       next: (resultat) => {
-        this.message.set(`Rapprochement notes de frais : ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
+        this.message.set(`Rapprochement notes de frais : ${resultat.operationsTraitees} opération(s) examinée(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
         this.chargerOperations();
         this.chargerRapprochements();
       },
@@ -642,7 +705,7 @@ export class TresoreriePage implements OnInit {
     this.message.set('Rapprochement note de frais');
     this.api.rapprocherNoteFrais(operation.id).subscribe({
       next: (resultat) => {
-        this.message.set(`Rapprochement note de frais : ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
+        this.message.set(`Rapprochement note de frais : ${resultat.operationsTraitees} opération(s) examinée(s), ${resultat.propositionsCreees} proposition(s), ${resultat.operationsSansMatch} sans match.`);
         this.chargerOperations();
         this.chargerRapprochements();
       },

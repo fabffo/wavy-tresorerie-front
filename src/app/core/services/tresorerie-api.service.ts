@@ -3,6 +3,8 @@ import { Injectable, inject } from '@angular/core';
 
 import { environment } from '../../../environments/environment';
 import {
+  PropositionsCarteResultat,
+  ConfirmationCartePayload,
   BalanceAgee,
   CompteBancaire,
   CompteBancairePayload,
@@ -112,6 +114,14 @@ export class TresorerieApiService {
 
   rapprocherSalaires() {
     return this.http.post<RapprochementFacturesResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-salaires`, {});
+  }
+
+  proposerCartes() {
+    return this.http.get<PropositionsCarteResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-cartes`);
+  }
+
+  confirmerCarte(operationId: number, demande: ConfirmationCartePayload) {
+    return this.http.post<RapprochementFacturesResultat>(`${this.baseUrl}/operations-bancaires/${operationId}/rapprochement-carte`, demande);
   }
 
   rapprocherNotesFrais() {
