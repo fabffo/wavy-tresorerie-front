@@ -5,6 +5,8 @@ import { environment } from '../../../environments/environment';
 import {
   PropositionsCarteResultat,
   ConfirmationCartePayload,
+  ConfirmationCartesPayload,
+  ConfirmationCartesResultat,
   BalanceAgee,
   CompteBancaire,
   CompteBancairePayload,
@@ -118,6 +120,10 @@ export class TresorerieApiService {
 
   proposerCartes() {
     return this.http.get<PropositionsCarteResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-cartes`);
+  }
+
+  confirmerCartes(demande: ConfirmationCartesPayload) {
+    return this.http.post<ConfirmationCartesResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-cartes/confirmer`, demande);
   }
 
   confirmerCarte(operationId: number, demande: ConfirmationCartePayload) {

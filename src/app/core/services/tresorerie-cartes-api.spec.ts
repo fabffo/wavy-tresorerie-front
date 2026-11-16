@@ -24,4 +24,13 @@ describe('Contrat HTTP des propositions carte', () => {
     expect(req.request.method).toBe('POST'); expect(req.request.body).toEqual(demande);
     req.flush({ operationsTraitees: 1, rapprochementsCrees: 1, propositionsCreees: 0, operationsSansMatch: 0, messages: [] });
   });
+  it('le lot transmet les couples et consentements à la confirmation existante étendue', () => {
+    const demande = { confirmation: true, lignes: [{ operationId: 4, demande: { factureId: 10,
+      tiersConfirme: 7, confirmation: true, confirmerAffectation: true, confirmerDateAtypique: false } }] };
+    api.confirmerCartes(demande).subscribe();
+    const req = http.expectOne(r => r.url.endsWith('/operations-bancaires/rapprochement-cartes/confirmer'));
+    expect(req.request.method).toBe('POST');expect(req.request.body).toEqual(demande);
+    req.flush({ reussis: 1, refuses: 0, conflits: 0, lignes: [] });
+  });
+
 });

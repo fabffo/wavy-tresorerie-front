@@ -270,6 +270,17 @@
         </table>
       }
       @case ('operations') {
+        <div role="tablist" aria-label="Vues des opérations bancaires" class="actions">
+          <button type="button" role="tab" id="onglet-operations" aria-controls="panneau-operations"
+            [attr.aria-selected]="ongletOperations() === 'operations'" [disabled]="loading()"
+            (click)="changerOngletOperations('operations')">Opérations bancaires</button>
+          <button type="button" role="tab" id="onglet-cartes" aria-controls="panneau-cartes"
+            [attr.aria-selected]="ongletOperations() === 'cartes'" [disabled]="loading()"
+            (click)="changerOngletOperations('cartes')">Rapprochement carte entreprise</button>
+        </div>
+        @if (ongletOperations() === 'operations') {
+          <section role="tabpanel" id="panneau-operations" aria-labelledby="onglet-operations">
+
         <div class="operations-tools">
           <div class="filters">
             <label>
@@ -320,7 +331,6 @@
             <button type="button" class="primary" (click)="rapprocherFactures()">Rapprochement factures et documents</button>
             <button type="button" class="primary" (click)="rapprocherSalaires()">Rapprochement salaires</button>
             <button type="button" class="primary" (click)="rapprocherNotesFrais()">Remboursements de notes de frais</button>
-            <button type="button" class="primary" [disabled]="loading()" (click)="proposerCartes()">Dépenses par carte d’entreprise</button>
             <button type="button" class="primary" [disabled]="operationsPieceRapprochementPossibles().length === 0" (click)="creerFacturesRapprochementPossibles()">
               Pièces de rapprochement ({{ operationsPieceRapprochementPossibles().length }})
             </button>
@@ -445,33 +455,6 @@
             </div>
           </form>
         }
-        @if (propositionsCartes(); as resultat) {
-          <section aria-label="Propositions dépenses carte">
-            <h3>Dépenses par carte d’entreprise — propositions à confirmer</h3>
-            <p>{{ resultat.operationsExaminees }} opération(s) examinée(s), {{ resultat.piecesExaminees }} pièce(s) ouverte(s),
-              {{ resultat.propositions.length }} proposition(s), {{ resultat.operationsSansMatch }} opération(s) sans correspondance.</p>
-            <p>Aucune validation automatique. Les dates atypiques restent visibles. Un tiers bancaire différent bloque la confirmation.</p>
-            <div class="table-scroll-container">
-              <table>
-                <thead><tr><th>Opération bancaire</th><th>Pièce et fournisseur</th><th>Dates</th><th>Critères</th><th>Confirmation</th></tr></thead>
-                <tbody>
-                  @for (p of resultat.propositions; track p.operationId + '-' + p.factureId) {
-                    <tr>
-                      <td>{{ p.libelleOperation }}<br>{{ montant(p.montantOperation) }}</td>
-                      <td>{{ p.numeroPiece || p.factureId }} — {{ p.nomTiers }}<br>{{ montant(p.montantPiece) }}</td>
-                      <td>Achat bancaire : {{ p.dateAchat || 'absente' }}<br>Dépense : {{ p.dateDepense || 'absente' }}<br>Comptabilisation : {{ p.dateOperation }}</td>
-                      <td>@for (critere of p.criteres; track critere) { <div>{{ critere }}</div> }
-                        @if (p.ambiguite) { <strong>Plusieurs correspondances possibles : choix utilisateur requis.</strong> }
-                        @if (p.conflit) { <strong>Conflit : tiers différent ou autre rapprochement en cours. Actualisez après résolution.</strong> }
-                      </td>
-                      <td><button type="button" [disabled]="loading() || p.conflit" (click)="confirmerCarte(p)">Confirmer ce rapprochement</button></td>
-                    </tr>
-                  } @empty { <tr><td colspan="5">Aucune pièce carte de montant correspondant. Aucun rapprochement effectué.</td></tr> }
-                </tbody>
-              </table>
-            </div>
-          </section>
-        }
         <div class="table-scroll-container">
           <table class="operations-table">
             <thead>
@@ -574,6 +557,86 @@
             <button type="button" [disabled]="pageOperations() >= totalPagesOperations()" (click)="pageSuivanteOperations()">Suivant</button>
           </div>
         </div>
+
+          </section>
+        } @else {
+          <section role="tabpanel" id="panneau-cartes" aria-labelledby="onglet-cartes">
+            <button type="button" [disabled]="loading()" (click)="proposerCartes()">Actualiser les propositions carte</button>
+            <p>Le rapprochement porte sur les pièces d’achat générées, et non sur les notes de frais d’origine.</p>
+            @if (bilanCartes(); as bilan) {
+              <section aria-label="Bilan des rapprochements carte" aria-live="polite">
+                <h3>Résultat du lot</h3>
+                <p>{{ bilan.reussis }} réussi(s), {{ bilan.refuses }} refusé(s), {{ bilan.conflits }} conflit(s).</p>
+                <ul>@for (ligne of bilan.lignes; track ligne.operationId + '-' + ligne.factureId) {
+                  <li>Opération {{ ligne.operationId }} / pièce {{ ligne.factureId }} : {{ ligne.statut }} — {{ ligne.message }}</li>
+                }</ul>
+              </section>
+            }
+            @if (reprisesCartes().length) {
+              <p>Résultat non confirmé pour {{ reprisesCartes().length }} ligne(s). La reprise utilise les mêmes identifiants de paiement.</p>
+              <button type="button" [disabled]="loading()" (click)="preparerConfirmationCartes(true)">Reprendre les lignes non confirmées</button>
+            }
+            @if (recapitulatifCartes().length) {
+              <section aria-label="Récapitulatif avant confirmation" class="carte-recapitulatif">
+                <h3>Vérifier les {{ recapitulatifCartes().length }} rapprochement(s)</h3>
+                <p>La confirmation enregistrera les paiements des pièces ci-dessous. Vérifiez les fournisseurs et les dates.</p>
+                <ul>@for (p of recapitulatifCartes(); track p.operationId + '-' + p.factureId) {
+                  <li><strong>Opération {{ p.operationId }} : {{ p.libelleOperation }}</strong><br>
+                    Pièce {{ p.numeroPiece || p.factureId }} — Fournisseur : {{ p.nomTiers }} (tiers {{ p.tiersId }})<br>
+                    Montant : {{ montant(p.montantRapproche) }}<br>
+                    Dépense : {{ p.dateDepense }} — Achat bancaire : {{ p.dateAchat || 'absente' }} — Comptabilisation : {{ p.dateOperation }}
+                    @for (critere of p.criteres; track critere) { <div>{{ critere }}</div> }
+                    @if (p.affectationRequise) { <strong>Le fournisseur de la pièce sera associé explicitement à l’opération, classée en achat.</strong> }
+                  </li>
+                }</ul>
+                <button type="button" class="primary" [disabled]="loading()" (click)="confirmerSelectionCartes()">Confirmer ces {{ recapitulatifCartes().length }} rapprochement(s)</button>
+                <button type="button" [disabled]="loading()" (click)="recapitulatifCartes.set([])">Annuler</button>
+              </section>
+            }
+        @if (propositionsCartes(); as resultat) {
+          <section aria-label="Propositions dépenses carte">
+            <h3>Dépenses par carte d’entreprise — propositions à confirmer</h3>
+            <p>{{ resultat.operationsExaminees }} opération(s) examinée(s), {{ resultat.piecesExaminees }} pièce(s) ouverte(s),
+              {{ resultat.propositions.length }} proposition(s), {{ resultat.operationsSansMatch }} opération(s) sans correspondance.</p>
+            <p>Aucune validation automatique. Les dates atypiques restent visibles. Un tiers bancaire différent bloque la confirmation.</p>
+            <div class="actions">
+              <label><input type="checkbox" [checked]="toutesCartesSuresSelectionnees()" [disabled]="loading()"
+                (change)="selectionnerCartesSures($any($event.target).checked)" /> Tout sélectionner les propositions sûres</label>
+              <button type="button" [disabled]="loading()" (click)="selectionnerCartesSures(false)">Tout désélectionner</button>
+              <span>{{ cartesSelectionnees().length }} ligne(s) sélectionnée(s)</span>
+              <button type="button" class="primary" [disabled]="loading() || !cartesSelectionnees().length"
+                (click)="preparerConfirmationCartes()">Confirmer les rapprochements sélectionnés</button>
+            </div>
+            <div class="table-scroll-container">
+              <table>
+                <thead><tr><th>Sélection</th><th>Opération bancaire</th><th>Pièce et fournisseur</th><th>Dates</th><th>Critères</th><th>Confirmation</th></tr></thead>
+                <tbody>
+                  @for (p of resultat.propositions; track p.operationId + '-' + p.factureId) {
+                    <tr>
+                      <td><input type="checkbox" [attr.aria-label]="'Sélectionner ' + p.libelleOperation + ' / ' + p.numeroPiece"
+                        [checked]="selectionCartes().has(cleCarte(p))" [disabled]="loading() || !carteSure(p)"
+                        (change)="selectionnerCarte(p, $any($event.target).checked)" />
+                        @if (!carteSure(p)) { <small>Vérification individuelle requise</small> }
+                      </td>
+                      <td>{{ p.libelleOperation }}<br>{{ montant(p.montantOperation) }}</td>
+                      <td>{{ p.numeroPiece || p.factureId }} — {{ p.nomTiers }}<br>{{ montant(p.montantPiece) }}</td>
+                      <td>Achat bancaire : {{ p.dateAchat || 'absente' }}<br>Dépense : {{ p.dateDepense || 'absente' }}<br>Comptabilisation : {{ p.dateOperation }}</td>
+                      <td>@for (critere of p.criteres; track critere) { <div>{{ critere }}</div> }
+                        @if (p.ambiguite) { <strong>Plusieurs correspondances possibles : choix utilisateur requis.</strong> }
+                        @if (p.conflit) { <strong>Conflit : tiers différent ou autre rapprochement en cours. Actualisez après résolution.</strong> }
+                      </td>
+                      <td><button type="button" [disabled]="loading() || p.conflit" (click)="confirmerCarte(p)">Confirmer ce rapprochement</button></td>
+                    </tr>
+                  } @empty { <tr><td colspan="6">Aucune pièce carte de montant correspondant. Aucun rapprochement effectué.</td></tr> }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
+
+
+          </section>
+        }
       }
       @case ('pieces-rapprochement') {
         <div class="rapprochement-tools"><h3>Pièces de rapprochement non commerciales</h3></div>

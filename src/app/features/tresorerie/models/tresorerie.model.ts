@@ -350,3 +350,13 @@ export interface ConfirmationCartePayload {
   factureId: number; tiersConfirme: number; confirmation: boolean;
   confirmerAffectation: boolean; confirmerDateAtypique: boolean;
 }
+
+export interface ConfirmationCartesPayload {
+  confirmation: boolean;
+  lignes: Array<{ operationId: number; demande: ConfirmationCartePayload }>;
+}
+export interface ConfirmationCartesResultat {
+  reussis: number; refuses: number; conflits: number;
+  lignes: Array<{ operationId: number; factureId: number; statut: 'SUCCES' | 'REFUSE' | 'CONFLIT';
+    rapprochementId: number | null; code: string | null; message: string }>;
+}

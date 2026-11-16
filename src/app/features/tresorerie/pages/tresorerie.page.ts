@@ -10,6 +10,7 @@ import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge
 import { getHttpErrorMessage } from '../../../shared/http/http-error-message';
 import {
   PropositionCarte,
+  ConfirmationCartesResultat,
   PropositionsCarteResultat,
   BalanceAgee,
   CompteBancaire,
@@ -89,6 +90,14 @@ export class TresoreriePage implements OnInit {
   readonly modeCompte = signal<ModeCompte>('liste');
   readonly propositionsCartes = signal<PropositionsCarteResultat | null>(null);
   private contexteCartes: string | null = null;
+  readonly ongletOperations = signal<'operations' | 'cartes'>('operations');
+  readonly selectionCartes = signal<Set<string>>(new Set());
+  readonly recapitulatifCartes = signal<PropositionCarte[]>([]);
+  readonly bilanCartes = signal<ConfirmationCartesResultat | null>(null);
+  readonly reprisesCartes = signal<PropositionCarte[]>([]);
+  readonly cartesSelectionnees = computed(() => (this.propositionsCartes()?.propositions ?? [])
+    .filter(p => this.selectionCartes().has(this.cleCarte(p))));
+
   readonly operations = signal<OperationBancaire[]>([]);
   readonly operationSelectionnee = signal<OperationBancaire | null>(null);
   readonly modeOperation = signal<ModeOperation>('liste');
@@ -307,6 +316,10 @@ export class TresoreriePage implements OnInit {
   charger(): void {
     this.propositionsCartes.set(null);
     this.contexteCartes = null;
+    this.selectionCartes.set(new Set());
+    this.recapitulatifCartes.set([]);
+    this.bilanCartes.set(null);
+    this.reprisesCartes.set([]);
     this.loading.set(true);
     this.error.set(null);
     this.api.dashboard().subscribe({
@@ -327,6 +340,11 @@ export class TresoreriePage implements OnInit {
         this.api.imports().subscribe({ next: (data) => this.imports.set(data), error: (e) => this.error.set(getHttpErrorMessage(e)), complete: fin });
         break;
       case 'operations':
+        this.chargerOperations(() => {
+          fin();
+          if (this.ongletOperations() === 'cartes') this.proposerCartes();
+        });
+        break;
       case 'previsionnel':
         this.chargerOperations(fin);
         break;
@@ -625,6 +643,98 @@ export class TresoreriePage implements OnInit {
     return `${this.contexteService.tenantId()}:${this.contexteService.societeCouranteId()}`;
   }
 
+  changerOngletOperations(onglet: 'operations' | 'cartes'): void {
+    if (this.loading()) return;
+    this.ongletOperations.set(onglet);
+    if (onglet === 'cartes' && !this.propositionsCartes()) this.proposerCartes();
+  }
+
+  cleCarte(p: PropositionCarte): string { return `${p.operationId}:${p.factureId}`; }
+
+  carteSure(p: PropositionCarte): boolean {
+    const propositions = this.propositionsCartes()?.propositions ?? [];
+    return !p.conflit && !p.ambiguite && !p.dateAtypique && p.commercantReconnu
+      && p.ecart === 0 && p.montantOperation === p.montantPiece
+      && !propositions.some(a => this.cleCarte(a) !== this.cleCarte(p)
+        && (a.operationId === p.operationId || a.factureId === p.factureId));
+  }
+
+  selectionnerCarte(p: PropositionCarte, selectionnee: boolean): void {
+    if (this.loading()) return;
+    const selection = new Set(this.selectionCartes());
+    if (selectionnee && this.carteSure(p)) selection.add(this.cleCarte(p));
+    else selection.delete(this.cleCarte(p));
+    this.selectionCartes.set(selection);
+    this.recapitulatifCartes.set([]);
+  }
+
+  selectionnerCartesSures(selectionner: boolean): void {
+    if (this.loading()) return;
+    this.selectionCartes.set(new Set(selectionner
+      ? (this.propositionsCartes()?.propositions ?? []).filter(p => this.carteSure(p)).map(p => this.cleCarte(p)) : []));
+    this.recapitulatifCartes.set([]);
+  }
+
+  toutesCartesSuresSelectionnees(): boolean {
+    const sures = (this.propositionsCartes()?.propositions ?? []).filter(p => this.carteSure(p));
+    return sures.length > 0 && sures.every(p => this.selectionCartes().has(this.cleCarte(p)));
+  }
+
+  preparerConfirmationCartes(reprise = false): void {
+    if (this.loading() || !this.verifierContexteCartes()) return;
+    this.recapitulatifCartes.set(reprise ? [...this.reprisesCartes()]
+      : this.cartesSelectionnees().filter(p => this.carteSure(p)));
+  }
+
+  private verifierContexteCartes(): boolean {
+    if (this.contexteCartes === this.cleContexteCartes()) return true;
+    this.propositionsCartes.set(null);
+    this.selectionCartes.set(new Set());
+    this.recapitulatifCartes.set([]);
+    this.reprisesCartes.set([]);
+    this.bilanCartes.set(null);
+    this.error.set('La société a changé. Recherchez de nouveau les propositions carte.');
+    return false;
+  }
+
+  confirmerSelectionCartes(): void {
+    if (this.loading() || !this.verifierContexteCartes()) return;
+    const propositions = [...this.recapitulatifCartes()];
+    if (!propositions.length) return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.error.set(null);
+    this.api.confirmerCartes({ confirmation: true, lignes: propositions.map(p => ({
+      operationId: p.operationId, demande: { factureId: p.factureId, tiersConfirme: p.tiersId,
+        confirmation: true, confirmerAffectation: p.affectationRequise, confirmerDateAtypique: false },
+    })) }).subscribe({
+      next: bilan => {
+        this.loading.set(false);
+        if (contexte !== this.cleContexteCartes()) return;
+        this.bilanCartes.set(bilan);
+        this.recapitulatifCartes.set([]);
+        this.selectionCartes.set(new Set());
+        this.reprisesCartes.update(anciennes => [
+          ...anciennes.filter(p => !propositions.some(a => this.cleCarte(a) === this.cleCarte(p))),
+          ...propositions.filter(p => bilan.lignes.some(l => l.operationId === p.operationId
+            && l.factureId === p.factureId && l.code === 'RESULTAT_A_REPRENDRE')),
+        ]);
+        this.chargerOperations();
+        this.chargerRapprochements();
+        this.proposerCartes();
+      },
+      error: e => {
+        this.loading.set(false);
+        if (contexte !== this.cleContexteCartes()) return;
+        this.recapitulatifCartes.set([]);
+        this.reprisesCartes.update(anciennes => [
+          ...anciennes.filter(p => !propositions.some(a => this.cleCarte(a) === this.cleCarte(p))), ...propositions,
+        ]);
+        this.error.set(`${getHttpErrorMessage(e)} Résultat du lot non confirmé : reprenez les mêmes couples pour éviter tout double paiement.`);
+      },
+    });
+  }
+
   proposerCartes(): void {
     if (this.loading()) return;
     const contexte = this.cleContexteCartes();
@@ -632,7 +742,8 @@ export class TresoreriePage implements OnInit {
     this.error.set(null);
     this.message.set(null);
     this.propositionsCartes.set(null);
-    this.contexteCartes = null;
+    this.selectionCartes.set(new Set());
+    this.recapitulatifCartes.set([]);
     this.api.proposerCartes().pipe(finalize(() => this.loading.set(false))).subscribe({
       next: (resultat) => {
         if (contexte !== this.cleContexteCartes()) return;
@@ -646,14 +757,11 @@ export class TresoreriePage implements OnInit {
 
   confirmerCarte(proposition: PropositionCarte): void {
     if (this.loading() || proposition.conflit) return;
-    if (this.contexteCartes !== this.cleContexteCartes()) {
-      this.propositionsCartes.set(null);
-      this.error.set('La société a changé. Recherchez de nouveau les propositions carte.');
-      return;
-    }
+    if (!this.verifierContexteCartes()) return;
     const avertissements = [
       proposition.ambiguite ? 'Plusieurs correspondances existent : vous choisissez uniquement cette pièce et cette opération.' : '',
       proposition.affectationRequise ? `Associer le fournisseur ${proposition.nomTiers} (tiers ${proposition.tiersId}) à cette opération et la classer en achat.` : '',
+      !proposition.commercantReconnu ? 'Commerçant différent : vérifiez le justificatif et le fournisseur, aucun alias ne sera créé.' : '',
       proposition.dateAtypique ? 'Date atypique : confirmez avoir vérifié le justificatif.' : '',
       proposition.ecart > 0 ? 'Un écart de 0,01 sera conservé comme reliquat non soldé.' : '',
     ].filter(Boolean).join('\n');
@@ -661,19 +769,22 @@ export class TresoreriePage implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.message.set(null);
+    const contexte = this.cleContexteCartes();
     this.api.confirmerCarte(proposition.operationId, {
       factureId: proposition.factureId, tiersConfirme: proposition.tiersId, confirmation: true,
       confirmerAffectation: proposition.affectationRequise, confirmerDateAtypique: proposition.dateAtypique,
-    }).pipe(finalize(() => this.loading.set(false))).subscribe({
+    }).subscribe({
       next: () => {
-        this.propositionsCartes.set(null);
-        this.message.set('Rapprochement carte confirmé. Relancez la recherche pour actualiser les propositions.');
+        this.loading.set(false);
+        if (contexte !== this.cleContexteCartes()) return;
+        this.reprisesCartes.update(ps => ps.filter(p => this.cleCarte(p) !== this.cleCarte(proposition)));
         this.chargerOperations();
         this.chargerRapprochements();
+        this.proposerCartes();
       },
       error: (e) => {
-        this.propositionsCartes.set(null);
-        this.error.set(getHttpErrorMessage(e));
+        this.loading.set(false);
+        if (contexte === this.cleContexteCartes()) this.error.set(getHttpErrorMessage(e));
       },
     });
   }
