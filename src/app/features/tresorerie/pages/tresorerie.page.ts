@@ -10,6 +10,7 @@ import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge
 import { getHttpErrorMessage } from '../../../shared/http/http-error-message';
 import {
   PropositionCarte,
+  EtapeAssistant, ApercuAssistant, LigneAssistant, CandidatAssistant, ChoixAssistant, ConfirmationAssistant, BilanAssistant, TiersAssistant,
   ConfirmationCartesResultat,
   PropositionsCarteResultat,
   BalanceAgee,
@@ -78,6 +79,7 @@ export class TresoreriePage implements OnInit {
 
   constructor() {
     effect(() => { if (this.contexteService.changementSociete() > 0) this.charger(); });
+    effect(() => { this.filtresOperations(); this.contexteService.societeCouranteId(); this.invaliderAssistant(); });
   }
 
   readonly onglet = signal<OngletTresorerie>('dashboard');
@@ -90,7 +92,7 @@ export class TresoreriePage implements OnInit {
   readonly modeCompte = signal<ModeCompte>('liste');
   readonly propositionsCartes = signal<PropositionsCarteResultat | null>(null);
   private contexteCartes: string | null = null;
-  readonly ongletOperations = signal<'operations' | 'cartes'>('operations');
+  readonly ongletOperations = signal<'operations' | 'assistant'>('operations');
   readonly selectionCartes = signal<Set<string>>(new Set());
   readonly recapitulatifCartes = signal<PropositionCarte[]>([]);
   readonly bilanCartes = signal<ConfirmationCartesResultat | null>(null);
@@ -126,6 +128,223 @@ export class TresoreriePage implements OnInit {
   readonly balance = signal<BalanceAgee | null>(null);
   readonly operationRapprochementManuel = signal<OperationBancaire | null>(null);
   readonly candidatesRapprochement = signal<Array<FactureCandidateRapprochement & { selectionnee: boolean; montantRapproche: number }>>([]);
+
+  readonly etapesAssistant: Array<{ id: EtapeAssistant; libelle: string }> = [
+    { id: 'TIERS', libelle: 'Identification des tiers' }, { id: 'NOTES_FRAIS', libelle: 'Notes de frais' },
+    { id: 'SALAIRES', libelle: 'Salaires' }, { id: 'CLIENTS', libelle: 'Factures clients' },
+    { id: 'FOURNISSEURS', libelle: 'Factures fournisseurs' }, { id: 'PIECES', libelle: 'Opérations sans facture' },
+  ];
+  readonly etapeAssistant = signal<EtapeAssistant>('TIERS');
+  readonly categorieAssistant = signal('CARTE');
+  readonly porteeAssistant = signal<'FILTRES' | 'PAGE'>('FILTRES');
+  readonly operationAssistant = signal<number | null>(null);
+  readonly apercuAssistant = signal<ApercuAssistant | null>(null);
+  readonly detailAssistant = signal<LigneAssistant | null>(null);
+  readonly choixAssistant = signal<Array<{ ligne: LigneAssistant; candidat: CandidatAssistant; choix: ChoixAssistant }>>([]);
+  readonly recapAssistant = signal<ConfirmationAssistant | null>(null);
+  readonly tiersConfirmesAssistant = signal<Array<{ id: number; nom: string; operation: number }>>([]);
+  readonly bilanAssistant = signal<BilanAssistant | null>(null);
+  readonly repriseAssistant = signal<ConfirmationAssistant | null>(null);
+  readonly tiersManuelsAssistant = signal<TiersAssistant[]>([]);
+  readonly rechercheTiersAssistant = signal('');
+  private contexteApercuAssistant: string | null = null;
+  private contexteRepriseAssistant: string | null = null;
+  private sequenceAssistant = 0;
+
+  invaliderAssistant(): void {
+    this.sequenceAssistant++;
+    this.apercuAssistant.set(null); this.detailAssistant.set(null); this.choixAssistant.set([]);
+    this.recapAssistant.set(null); this.bilanAssistant.set(null); this.repriseAssistant.set(null); this.tiersConfirmesAssistant.set([]);
+    this.tiersManuelsAssistant.set([]); this.contexteApercuAssistant = null; this.contexteRepriseAssistant = null;
+  }
+
+  private perimetreAssistant() {
+    const id = this.operationAssistant();
+    const operationIds = id ? [id] : this.porteeAssistant() === 'PAGE' ? this.operationsPage().map(o => o.id) : undefined;
+    return { ...this.filtresOperations(), operationIds };
+  }
+
+  private cleAssistant(): string {
+    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.perimetreAssistant()]);
+  }
+
+  ouvrirAssistant(operation?: OperationBancaire): void {
+    if (this.loading()) return;
+    this.ongletOperations.set('assistant'); this.operationAssistant.set(operation?.id ?? null);
+    this.etapeAssistant.set(!operation?.tiersId ? 'TIERS' : operation.natureOperation === 'SALAIRE' ? 'SALAIRES'
+      : operation.natureOperation === 'NOTE_DE_FRAIS' ? 'NOTES_FRAIS' : operation.sens === 'CREDIT' ? 'CLIENTS' : 'FOURNISSEURS');
+    this.invaliderAssistant();
+  }
+
+  changerEtapeAssistant(etape: EtapeAssistant): void {
+    if (this.loading()) return;
+    this.etapeAssistant.set(etape); this.invaliderAssistant();
+  }
+
+  naviguerAssistant(delta: number): void {
+    const index = this.etapesAssistant.findIndex(e => e.id === this.etapeAssistant());
+    const etape = this.etapesAssistant[index + delta]; if (etape) this.changerEtapeAssistant(etape.id);
+  }
+
+  previsualiserAssistant(conserverBilan = false): void {
+    if (this.loading()) return;
+    if (this.porteeAssistant() === 'PAGE' && !this.operationAssistant() && !this.operationsPage().length) {
+      this.invaliderAssistant(); this.error.set('Cette page ne contient aucune opération à analyser.'); return;
+    }
+    const contexte = this.cleAssistant(); const sequence = ++this.sequenceAssistant;
+    this.choixAssistant.set([]); this.recapAssistant.set(null); this.detailAssistant.set(null); this.apercuAssistant.set(null);
+    if (!conserverBilan) this.bilanAssistant.set(null);
+    this.loading.set(true); this.error.set(null);
+    this.api.previsualiserAssistant(this.etapeAssistant(), this.categorieAssistant(), this.perimetreAssistant()).subscribe({
+      next: apercu => {
+        if (sequence !== this.sequenceAssistant || contexte !== this.cleAssistant()) return;
+        this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu);
+      },
+      error: e => { if (contexte === this.cleAssistant()) this.error.set(getHttpErrorMessage(e)); this.loading.set(false); },
+      complete: () => this.loading.set(false),
+    });
+  }
+
+  estSelectionAssistant(ligne: LigneAssistant, candidat: CandidatAssistant): boolean {
+    return this.choixAssistant().some(s => s.choix.operationId === ligne.operation.id && s.choix.candidatCle === candidat.cle);
+  }
+
+  selectionnerAssistant(ligne: LigneAssistant, candidat: CandidatAssistant, selectionner: boolean): void {
+    if (this.loading() || ligne.bloquee || this.contexteApercuAssistant !== this.cleAssistant()) return;
+    const autres = this.choixAssistant().filter(s => !(s.choix.operationId === ligne.operation.id && s.choix.candidatCle === candidat.cle));
+    if (!selectionner) { this.choixAssistant.set(autres); this.recapAssistant.set(null); return; }
+    if (candidat.pieceId && autres.some(s => s.choix.pieceId === candidat.pieceId && s.candidat.typePiece === candidat.typePiece && s.choix.operationId !== ligne.operation.id)) {
+      this.error.set('Cette pièce est déjà sélectionnée sur une autre opération.'); return;
+    }
+    const uneOperation = ['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) || !candidat.sur;
+    if (autres.some(s => (uneOperation || !s.candidat.sur) && s.choix.operationId !== ligne.operation.id)) {
+      this.error.set('Cette proposition doit être confirmée individuellement.'); return;
+    }
+    if ((this.etapeAssistant() === 'TIERS' || this.etapeAssistant() === 'NOTES_FRAIS') && autres.some(s => s.choix.operationId === ligne.operation.id)) {
+      this.error.set('Choisissez une seule correspondance pour cette opération.'); return;
+    }
+    this.choixAssistant.set([...autres, { ligne, candidat, choix: { operationId: ligne.operation.id,
+      candidatCle: candidat.cle, pieceId: candidat.pieceId, tiersId: candidat.tiersId, montant: candidat.montantPropose,
+      confirmerNature: false, verifierJustificatif: false, confirmerAffectation: candidat.carte?.affectationRequise ?? false,
+    } }]); this.recapAssistant.set(null); this.error.set(null);
+  }
+
+  modifierChoixAssistant(operationId: number, cle: string, champ: 'montant' | 'confirmerNature' | 'verifierJustificatif' | 'confirmerAffectation', valeur: number | boolean): void {
+    if (this.loading()) return;
+    this.choixAssistant.update(ss => ss.map(s => s.choix.operationId === operationId && s.choix.candidatCle === cle
+      ? { ...s, choix: { ...s.choix, [champ]: valeur } } : s)); this.recapAssistant.set(null);
+  }
+
+  selectionnerSuresAssistant(): void {
+    this.choixAssistant.set([]);
+    for (const ligne of this.apercuAssistant()?.lignes ?? []) {
+      if (ligne.bloquee) continue;
+      const sures = ligne.candidats.filter(c => c.sur);
+      if (sures.length === 1) this.selectionnerAssistant(ligne, sures[0], true);
+      if (['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) && this.choixAssistant().length) break;
+    }
+  }
+
+  preparerAssistant(automatique = false): void {
+    if (this.loading() || this.contexteApercuAssistant !== this.cleAssistant()) return;
+    if (automatique) this.selectionnerSuresAssistant();
+    const selections = this.choixAssistant();
+    if (!selections.length) { this.error.set('Sélectionnez une proposition.'); return; }
+    if (selections.length > 200) { this.error.set('Affinez le périmètre : 200 lignes maximum par confirmation.'); return; }
+    if (this.etapeAssistant() !== 'PIECES' && selections.some(s => s.candidat.avertissements.length && !s.choix.verifierJustificatif)) {
+      this.error.set('Vérifiez explicitement les avertissements et justificatifs des lignes sélectionnées.'); return;
+    }
+    if (selections.some(s => s.candidat.typePiece !== 'TIERS' && (!(s.choix.montant > 0) || s.choix.montant > s.candidat.montantPropose))) {
+      this.error.set('Le montant doit rester positif et dans les soldes disponibles.'); return;
+    }
+    for (const id of new Set(selections.map(s => s.choix.operationId))) {
+      const lignes = selections.filter(s => s.choix.operationId === id);
+      const operation = lignes[0].ligne.operation;
+      const plafond = operation.sens === 'DEBIT' ? operation.debit ?? Math.abs(operation.montant) : operation.credit ?? Math.abs(operation.montant);
+      if (lignes.reduce((s,l) => s + l.choix.montant,0) > plafond + 0.000001) {
+        this.error.set('La sélection dépasse le montant bancaire ; réduisez les affectations.'); return;
+      }
+    }
+    this.recapAssistant.set({ etape: this.etapeAssistant(), categorie: this.categorieAssistant(), perimetre: this.perimetreAssistant(),
+      confirmation: true, selections: selections.map(s => ({ ...s.choix })) });
+  }
+
+  confirmerAssistant(): void {
+    const demande = this.recapAssistant();
+    if (!demande || this.loading() || this.contexteApercuAssistant !== this.cleAssistant()) return;
+    const contexte = this.cleAssistant();
+    this.loading.set(true); this.error.set(null); this.recapAssistant.set(null);
+    this.api.confirmerAssistant(demande).subscribe({
+      next: bilan => {
+        this.loading.set(false); if (contexte !== this.cleAssistant()) return;
+        this.bilanAssistant.set(bilan);
+        if (demande.etape === 'TIERS') this.tiersConfirmesAssistant.set(this.choixAssistant().filter(s => bilan.lignes.some(r => r.operationId === s.choix.operationId && r.statut === 'SUCCES'))
+          .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId })));
+        const selections = demande.selections.filter(s => bilan.lignes.some(r => r.operationId === s.operationId && r.statut === 'A_REPRENDRE'));
+        this.repriseAssistant.set(selections.length ? { ...demande, selections } : null);
+        this.contexteRepriseAssistant = contexte;
+        this.chargerOperations(); this.api.dashboard().subscribe({ next: stats => this.dashboard.set(stats) });
+        this.previsualiserAssistant(true);
+      },
+      error: e => {
+        this.loading.set(false); if (contexte !== this.cleAssistant()) return;
+        this.repriseAssistant.set(demande); this.contexteRepriseAssistant = contexte;
+        this.error.set(`${getHttpErrorMessage(e)} Résultat incertain : reprendre la même sélection, sans recréer de pièce.`);
+      },
+    });
+  }
+
+  preparerRepriseAssistant(): void {
+    if (this.loading() || this.contexteRepriseAssistant !== this.cleAssistant()) return;
+    this.contexteApercuAssistant = this.cleAssistant(); this.recapAssistant.set(this.repriseAssistant());
+  }
+
+  chercherTiersAssistant(query: string): void {
+    this.rechercheTiersAssistant.set(query);
+    if (query.trim().length < 2) { this.tiersManuelsAssistant.set([]); return; }
+    const contexte = this.cleAssistant();
+    this.api.rechercherTiersAssistant(query).subscribe({ next: tiers => {
+      if (contexte === this.cleAssistant() && query === this.rechercheTiersAssistant()) this.tiersManuelsAssistant.set(tiers);
+    }, error: e => this.error.set(getHttpErrorMessage(e)) });
+  }
+
+  choisirTiersManuelAssistant(ligne: LigneAssistant, tiers: TiersAssistant): void {
+    const type: TypeTiersReconnu = tiers.roles.includes('SALARIE') ? 'SALARIE' : tiers.roles.includes('CLIENT') ? 'CLIENT'
+      : tiers.roles.includes('FOURNISSEUR_SERVICES') ? 'FOURNISSEUR_SERVICE' : tiers.roles.includes('FOURNISSEUR_GENERAL') ? 'FOURNISSEUR'
+      : tiers.roles.some(r => ['ORGANISME_FISCAL', 'ORGANISME_SOCIAL'].includes(r)) ? 'ADMINISTRATION' : 'AUTRE';
+    const candidat: CandidatAssistant = { cle: `MANUEL:${tiers.id}`, tiersId: tiers.id, nomTiers: tiers.libelle, typeTiers: type,
+      pieceId: null, numeroPiece: null, typePiece: 'TIERS', montantDisponible: 0, montantPropose: 0, datePiece: null, dateEcheance: null,
+      sur: false, criteres: ['Choix manuel du référentiel'], avertissements: [], natureProposee: null, carte: null };
+    const enrichie = { ...ligne, candidats: [...ligne.candidats.filter(c => c.cle !== candidat.cle), candidat] };
+    this.detailAssistant.set(enrichie);
+    this.apercuAssistant.update(a => a ? { ...a, lignes: a.lignes.map(l => l.operation.id === ligne.operation.id ? enrichie : l) } : a);
+    this.selectionnerAssistant(enrichie, candidat, true);
+  }
+
+  ouvrirTiersAssistant(id?: number, origine?: number): void {
+    const operationId = origine ?? this.detailAssistant()?.operation.id ?? this.operationAssistant();
+    const retour = `retourAssistant=1${operationId ? `&operationId=${operationId}` : ''}`;
+    this.shellBridge.navigate('tiers', id ? `/tiers/${id}?${retour}` : `/tiers/nouveau?${retour}`, id ? 'Fiche et règles bancaires' : 'Créer un tiers après recherche des doublons');
+  }
+
+  choixPourAssistant(ligne: LigneAssistant, candidat: CandidatAssistant): ChoixAssistant | null {
+    return this.choixAssistant().find(s => s.choix.operationId === ligne.operation.id && s.choix.candidatCle === candidat.cle)?.choix ?? null;
+  }
+  libelleChoixAssistant(choix: ChoixAssistant): string {
+    const selection = this.choixAssistant().find(s => s.choix.operationId === choix.operationId && s.choix.candidatCle === choix.candidatCle);
+    const ligne = selection?.ligne ?? this.apercuAssistant()?.lignes.find(l => l.operation.id === choix.operationId);
+    const candidat = selection?.candidat ?? ligne?.candidats.find(c => c.cle === choix.candidatCle);
+    return `${ligne?.operation.libelle ?? ''} · ${candidat?.nomTiers ?? ''} · ${candidat?.numeroPiece ?? choix.candidatCle} · ${candidat?.typePiece ?? ''} · Banque ${ligne?.operation.dateOperation ?? ''}, pièce ${candidat?.datePiece ?? ''} · ${candidat?.avertissements.join(' ; ') ?? ''}`;
+  }
+
+  resumeFiltresAssistant(): string {
+    const labels: Record<string,string> = {tiersReconnu:'Tiers reconnu',typeTiersReconnu:'Type de tiers',natureOperation:'Nature',statutClassification:'Classification',statutRapprochement:'Rapprochement'};
+    const valeurs = Object.entries(this.filtresOperations()).filter(([,v]) => v !== undefined && v !== '').map(([k,v]) => `${labels[k] || k} : ${v}`);
+    return valeurs.length ? valeurs.join(' ; ') : 'Aucun filtre : toutes les opérations de la société courante';
+  }
+
+  totalAssistant(): number { return this.choixAssistant().reduce((s, l) => s + l.choix.montant, 0); }
+
 
   readonly onglets: Array<{ id: OngletTresorerie; label: string }> = [
     { id: 'dashboard', label: 'Tableau de bord' },
@@ -204,6 +423,11 @@ export class TresoreriePage implements OnInit {
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((params) => {
       this.onglet.set(this.normaliserOnglet(params.get('vue')));
+      if (params.get('assistant') === 'tiers') {
+        this.ongletOperations.set('assistant'); this.etapeAssistant.set('TIERS');
+        const operation = Number(params.get('operationId'));
+        if (Number.isSafeInteger(operation) && operation > 0) this.operationAssistant.set(operation);
+      }
       if (this.onglet() === 'factures-echeances') {
         const vue = params.get('vueEcheances');
         if (this.vuesEcheances.includes(vue as (typeof this.vuesEcheances)[number])) this.vueEcheances.set(vue as (typeof this.vuesEcheances)[number]);
@@ -342,7 +566,7 @@ export class TresoreriePage implements OnInit {
       case 'operations':
         this.chargerOperations(() => {
           fin();
-          if (this.ongletOperations() === 'cartes') this.proposerCartes();
+          this.invaliderAssistant();
         });
         break;
       case 'previsionnel':
@@ -643,10 +867,10 @@ export class TresoreriePage implements OnInit {
     return `${this.contexteService.tenantId()}:${this.contexteService.societeCouranteId()}`;
   }
 
-  changerOngletOperations(onglet: 'operations' | 'cartes'): void {
+  changerOngletOperations(onglet: 'operations' | 'assistant'): void {
     if (this.loading()) return;
     this.ongletOperations.set(onglet);
-    if (onglet === 'cartes' && !this.propositionsCartes()) this.proposerCartes();
+    if (onglet === 'assistant') this.invaliderAssistant();
   }
 
   cleCarte(p: PropositionCarte): string { return `${p.operationId}:${p.factureId}`; }

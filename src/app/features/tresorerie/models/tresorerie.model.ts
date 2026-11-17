@@ -360,3 +360,32 @@ export interface ConfirmationCartesResultat {
   lignes: Array<{ operationId: number; factureId: number; statut: 'SUCCES' | 'REFUSE' | 'CONFLIT';
     rapprochementId: number | null; code: string | null; message: string }>;
 }
+
+export type EtapeAssistant = 'TIERS' | 'NOTES_FRAIS' | 'SALAIRES' | 'CLIENTS' | 'FOURNISSEURS' | 'PIECES';
+export interface PerimetreAssistant extends FiltresOperations { operationIds?: number[]; }
+export interface CandidatAssistant {
+  cle: string; tiersId: number; nomTiers: string; typeTiers: TypeTiersReconnu;
+  pieceId: number | null; numeroPiece: string | null; typePiece: string;
+  montantDisponible: number; montantPropose: number; datePiece: string | null; dateEcheance: string | null;
+  sur: boolean; criteres: string[]; avertissements: string[]; natureProposee: NatureOperationBancaire | null;
+  carte: PropositionCarte | null;
+}
+export interface LigneAssistant { operation: OperationBancaire; candidats: CandidatAssistant[]; anomalies: string[]; bloquee: boolean; }
+export interface ApercuAssistant {
+  etape: EtapeAssistant; categorie: string | null; operationsPerimetre: number; eligibles: number;
+  piecesDisponibles: number; propositions: number; anomalies: number; traitees: number; restantes: number;
+  montantEligible: number; lignes: LigneAssistant[];
+}
+export interface ChoixAssistant {
+  operationId: number; candidatCle: string; pieceId: number | null; tiersId: number; montant: number;
+  confirmerNature: boolean; verifierJustificatif: boolean; confirmerAffectation: boolean;
+}
+export interface ConfirmationAssistant {
+  etape: EtapeAssistant; perimetre: PerimetreAssistant; categorie: string; confirmation: boolean;
+  selections: ChoixAssistant[];
+}
+export interface BilanAssistant {
+  reussis: number; refuses: number; conflits: number; aReprendre: number;
+  lignes: Array<{ operationId: number; statut: string; code: string | null; message: string; rapprochementId: number | null }>;
+}
+export interface TiersAssistant { id: number; libelle: string; roles: string[]; score: number; }

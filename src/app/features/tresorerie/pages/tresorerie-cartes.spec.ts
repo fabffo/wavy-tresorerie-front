@@ -75,7 +75,7 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
   it('change de sous-onglet sans requête répétée et conserve filtres, tri et pagination', () => {
     page.pageOperations.set(4); page.filtresOperations.set({ tiersReconnu: 'INDIGO' });
     chargerPropositions([sure]);
-    page.changerOngletOperations('cartes');page.changerOngletOperations('operations');page.changerOngletOperations('cartes');
+    page.changerOngletOperations('assistant');page.changerOngletOperations('operations');page.changerOngletOperations('assistant');
     expect(api.proposerCartes).toHaveBeenCalledTimes(1);
     expect(page.pageOperations()).toBe(4);expect(page.filtresOperations()).toEqual({ tiersReconnu: 'INDIGO' });
     expect(page.triOperations()).toEqual({ sortBy: 'dateOperation', sortDirection: 'DESC' });
@@ -147,16 +147,11 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
     const html: HTMLElement = fixture.nativeElement;
     expect(html.querySelectorAll('[role="tablist"] [role="tab"]').length).toBe(2);
     expect(html.querySelector('.operations-table')).not.toBeNull();
-    chargerPropositions([sure]);page.changerOngletOperations('cartes');fixture.detectChanges();
+    chargerPropositions([sure]);page.changerOngletOperations('assistant');fixture.detectChanges();
     expect(html.querySelector('.operations-table')).toBeNull();
-    expect(html.textContent).toContain('77 opération(s) examinée(s)');
-    page.selectionnerCartesSures(true);page.preparerConfirmationCartes();fixture.detectChanges();
-    const recap = html.querySelector('[aria-label="Récapitulatif avant confirmation"]');
-    expect(recap?.textContent).toContain('INDIGO');expect(recap?.textContent).toContain('FA-2');
-    expect(recap?.textContent).toContain('2026-01-20');expect(api.confirmerCartes).not.toHaveBeenCalled();
-    page.bilanCartes.set({ reussis: 0, refuses: 1, conflits: 0, lignes: [{ operationId: 1, factureId: 2, statut: 'REFUSE',
-      rapprochementId: null, code: 'TEST', message: 'Solde insuffisant' }] });fixture.detectChanges();
-    expect(html.textContent).toContain('Solde insuffisant');
+    expect(html.textContent).toContain('Assistant de rapprochement');
+    expect(html.querySelectorAll('[aria-label="Étapes du rapprochement"] button')).toHaveLength(6);
+    expect(api.confirmerCartes).not.toHaveBeenCalled();
     page.changerOngletOperations('operations');fixture.detectChanges();expect(html.querySelector('.operations-table')).not.toBeNull();
   });
 

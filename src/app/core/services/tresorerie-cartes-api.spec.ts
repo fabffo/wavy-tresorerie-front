@@ -33,4 +33,14 @@ describe('Contrat HTTP des propositions carte', () => {
     req.flush({ reussis: 1, refuses: 0, conflits: 0, lignes: [] });
   });
 
+  it('assistant : prévisualisation GET filtrée et confirmation POST distincte', () => {
+    api.previsualiserAssistant('PIECES','CARTE',{tiersReconnu:'Impôt',operationIds:[1,2]}).subscribe();
+    const r=http.expectOne(r=>r.url.endsWith('/operations-bancaires/assistant'));
+    expect(r.request.method).toBe('GET');expect(r.request.params.get('tiersReconnu')).toBe('Impôt');expect(r.request.params.getAll('operationIds')).toEqual(['1','2']);
+    r.flush({etape:'PIECES',lignes:[]});
+    const demande={etape:'PIECES' as const,categorie:'CARTE',perimetre:{operationIds:[1]},confirmation:true,selections:[{operationId:1,candidatCle:'CREATION',pieceId:null,tiersId:59,montant:100,confirmerNature:false,verifierJustificatif:false,confirmerAffectation:false}]};
+    api.confirmerAssistant(demande).subscribe();const p=http.expectOne(r=>r.url.endsWith('/operations-bancaires/assistant/confirmer'));
+    expect(p.request.method).toBe('POST');expect(p.request.body).toEqual(demande);p.flush({reussis:1,lignes:[]});
+  });
+
 });

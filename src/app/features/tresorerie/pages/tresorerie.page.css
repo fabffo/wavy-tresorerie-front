@@ -549,3 +549,13 @@ small {
 .link-button { border: 0; background: none; color: #176b9b; padding: 0; font: inherit; text-align: left; cursor: pointer; text-decoration: underline; }
 
 .page>*{min-width:0}
+
+.assistant-etapes { display:flex; flex-wrap:wrap; gap:.4rem; margin-block:1rem; }
+.assistant-etapes [aria-current="step"] { font-weight:700; border:2px solid #125a91; }
+.assistant-contenu { display:flex; gap:1rem; align-items:flex-start; }
+.assistant-contenu > .table-scroll-container { flex:1; min-width:0; }
+.assistant-detail { flex:0 0 38%; max-height:75vh; overflow:auto; padding:1rem; border:1px solid #c9d6e1; }
+.assistant-candidat, .assistant-recap { padding:1rem; margin-block:.7rem; border:1px solid #c9d6e1; background:#f5f9fc; }
+.assistant-detail label { display:block; margin-block:.6rem; }
+.assistant .warning { color:#884000; }
+@media(max-width:900px) { .assistant-contenu { flex-direction:column; } .assistant-detail { width:100%; box-sizing:border-box; } }

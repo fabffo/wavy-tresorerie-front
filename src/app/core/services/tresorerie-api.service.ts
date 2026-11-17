@@ -4,6 +4,7 @@ import { Injectable, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import {
   PropositionsCarteResultat,
+  EtapeAssistant, PerimetreAssistant, ApercuAssistant, ConfirmationAssistant, BilanAssistant, TiersAssistant,
   ConfirmationCartePayload,
   ConfirmationCartesPayload,
   ConfirmationCartesResultat,
@@ -116,6 +117,25 @@ export class TresorerieApiService {
 
   rapprocherSalaires() {
     return this.http.post<RapprochementFacturesResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-salaires`, {});
+  }
+
+  previsualiserAssistant(etape: EtapeAssistant, categorie: string, perimetre: PerimetreAssistant) {
+    let params = new HttpParams().set('etape', etape).set('categorie', categorie);
+    for (const [cle, valeur] of Object.entries(perimetre)) {
+      if (Array.isArray(valeur)) { for (const id of valeur) params = params.append(cle, String(id)); }
+      else if (valeur !== undefined && valeur !== '') params = params.set(cle, String(valeur));
+    }
+    return this.http.get<ApercuAssistant>(`${this.baseUrl}/operations-bancaires/assistant`, { params });
+  }
+
+  confirmerAssistant(demande: ConfirmationAssistant) {
+    return this.http.post<BilanAssistant>(`${this.baseUrl}/operations-bancaires/assistant/confirmer`, demande);
+  }
+
+  rechercherTiersAssistant(query: string) {
+    return this.http.get<TiersAssistant[]>(`${environment.apiBaseUrl}/api/tiers/search`, {
+      params: new HttpParams().set('query', query).set('actif', 'true'),
+    });
   }
 
   proposerCartes() {
