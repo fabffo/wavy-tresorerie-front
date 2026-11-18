@@ -27,12 +27,12 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   let navigate: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     societe = vi.fn(() => 1); navigate = vi.fn();
-    api = { previsualiserAssistant: vi.fn().mockReturnValue(of(apercu)), confirmerAssistant: vi.fn().mockReturnValue(of({ reussis: 1, refuses: 0, conflits: 0, aReprendre: 0,
+    api = { reglesIdentification:vi.fn(()=>of([])),rolesIdentification:vi.fn(()=>of(['AUTRE','SALARIE'])),previsualiserAssistant: vi.fn().mockReturnValue(of(apercu)), confirmerAssistant: vi.fn().mockReturnValue(of({ reussis: 1, refuses: 0, conflits: 0, aReprendre: 0,
       lignes: [{ operationId: 1, statut: 'SUCCES', message: 'Confirmé', rapprochementId: 10 }] })), dashboard: vi.fn().mockReturnValue(of({})),
       rechercherTiersAssistant: vi.fn().mockReturnValue(of([{ id: 21, libelle: 'Adobe', roles: ['FOURNISSEUR_GENERAL'] }])) };
     TestBed.configureTestingModule({ providers: [
       { provide: TresorerieApiService, useValue: api }, { provide: ActivatedRoute, useValue: {} }, { provide: Router, useValue: {} },
-      { provide: ContexteService, useValue: { changementSociete: signal(0), societeCouranteId: societe, tenantId: () => 1 } },
+      { provide: ContexteService, useValue: { changementSociete: signal(0), societeCouranteId: societe, tenantId: () => 1, utilisateurId:()=>2 } },
       { provide: WavyShellBridgeService, useValue: { navigate } },
     ] });
     page = TestBed.runInInjectionContext(() => new TresoreriePage());
@@ -99,8 +99,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     const l={...ligne,operation:{...operation,tiersId:null,natureOperation:'SALAIRE' as const},candidats:[c]} as LigneAssistant;
     analyser('TIERS',[l]);selectionner(l,c);page.preparerAssistant();
     expect(page.recapAssistant()).toBeNull();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith('tiers',expect.stringContaining('validationBancaire=1'),expect.any(String));
-    expect(navigate.mock.calls[0][1]).toContain('tiersProposeId=21');
+    expect(navigate).not.toHaveBeenCalled();expect(page.identification()?.tiersId).toBe(21);
     expect(page.choixAssistant()[0].choix.confirmerNature).toBe(false);
   });
   it('un changement de société ou de filtres interdit la confirmation périmée', () => {
@@ -146,7 +145,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(html.querySelector('[aria-label="Récapitulatif de confirmation"]')?.textContent).toContain('2026-01-09');expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
   it('transmet un motif proposé vers la fiche Tiers sans créer de règle ni associer le tiers', () => {
-    page.operationAssistant.set(1);analyser('TIERS');page.detailAssistant.set({...ligne,operation:{...operation,id:2,libelle:'MICROSOFT'}});page.ouvrirTiersAssistant(21,1,true);
+    page.operationAssistant.set(1);analyser('TIERS',[{...ligne,operation:{...operation,tiersId:null}} as LigneAssistant]);page.detailAssistant.set({...ligne,operation:{...operation,id:2,libelle:'MICROSOFT'}});page.ouvrirTiersAssistant(21,1,true);
     expect(navigate).toHaveBeenCalledWith('tiers','/tiers/21?retourAssistant=1&operationId=1&proposerRegle=1&motifBancaire=ADOBE.COM',expect.any(String));
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
     expect(page.proposerMotifBancaire('VIR SEPA MEROVE 18/11/2026 123456')).toBe('MEROVE');
@@ -156,6 +155,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     Object.assign(TestBed.inject(ActivatedRoute),{queryParamMap:of(convertToParamMap({vue:'operations',assistant:'tiers',operationId:'1',tiersProposeId:'99'}))});
     vi.spyOn(page,'charger').mockImplementation(()=>{});initialiserPage.call(page);
     api['obtenirTiersAssistant']=vi.fn(()=>of({id:99,libelle:'Alice Merove',roles:['SALARIE'],actif:true}));
+    api['previsualiserAssistant'].mockReturnValue(of({...apercu,lignes:[{...ligne,operation:{...operation,tiersId:null}}]}));
     page.previsualiserAssistant();
     expect(api['obtenirTiersAssistant']).toHaveBeenCalledWith(99);
     expect(page.detailAssistant()?.candidats).toEqual(expect.arrayContaining([expect.objectContaining({cle:'MANUEL:99',tiersId:99})]));
@@ -196,11 +196,11 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
 
   it('limite le tableau à sept colonnes et un bouton Actions, puis ouvre seulement les actions possibles', () => {
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
-    page.onglet.set('operations');page.operations.set([operation]);fixture.detectChanges();
+    page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([operation]);fixture.detectChanges();
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
-      'Date opération','Libellé','Compte','Montant signé','Tiers','Statut rapprochement','Proposition / Actions']);
+      'Date opération','Libellé','Compte','Montant','Tiers','Statut rapprochement','Proposition / Actions']);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
     expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Actions']);
@@ -208,11 +208,11 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(Array.from(html.querySelectorAll('[role="menuitem"]')).map(b=>b.textContent?.trim())).toEqual(['Voir']);
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
-  it('examine par défaut les tiers inconnus et conserve une correction explicitement ciblée', () => {
+  it('examine les tiers inconnus sans réintroduire les opérations déjà identifiées', () => {
     const inconnue={...ligne,operation:{...operation,id:2,tiersId:null,tiersReconnu:null}} as LigneAssistant;
     analyser('TIERS',[ligne,inconnue]);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([2]);
-    page.identifierTiersOperation(operation);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([1]);
-    expect(page.detailAssistant()?.operation.id).toBe(1);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+    page.identifierTiersOperation(operation);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([2]);
+    expect(page.detailAssistant()).toBeNull();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
   it('propose ADOBE.COM par défaut, permet sa correction ou son refus sans enregistrer de règle', () => {
     const c={...candidat,cle:'MANUEL:21',typePiece:'TIERS',pieceId:null,sur:false,montantPropose:0};
@@ -253,7 +253,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     api['obtenirTiersAssistant']=vi.fn();
     api['previsualiserAssistant'].mockReturnValue(of({...apercu,etape:'TIERS',lignes:[{...ligne,operation:{...operation,tiersId:99,tiersReconnu:'Tiers confirmé'}}]}));
     page.previsualiserAssistant();
-    expect(page.operationsAffichees()[0].tiersReconnu).toBe('Tiers confirmé');expect(page.choixAssistant()).toHaveLength(0);
+    expect(page.operationsAffichees()).toHaveLength(0);expect(page.choixAssistant()).toHaveLength(0);
     expect(api['obtenirTiersAssistant']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
 

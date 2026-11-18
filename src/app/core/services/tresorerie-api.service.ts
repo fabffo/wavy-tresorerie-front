@@ -4,7 +4,7 @@ import { map } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import {
-  PropositionsCarteResultat,
+  PropositionsCarteResultat, TiersIdentification, CreationTiersIdentification, RegleBancaireIdentification,
   EtapeAssistant, PerimetreAssistant, ApercuAssistant, ConfirmationAssistant, BilanAssistant, TiersAssistant,
   ConfirmationCartePayload,
   ConfirmationCartesPayload,
@@ -142,6 +142,25 @@ export class TresorerieApiService {
   rechercherTiersAssistant(query: string) {
     return this.http.get<TiersAssistant[]>(`${environment.apiBaseUrl}/api/tiers/search`, {
       params: new HttpParams().set('query', query).set('actif', 'true'),
+    });
+  }
+
+  lireTiersIdentification(id:number) {
+    return this.http.get<TiersIdentification>(`${environment.apiBaseUrl}/api/tiers/${id}`);
+  }
+  listerTiersIdentification(recherche:string) {
+    return this.http.get<TiersIdentification[]>(`${environment.apiBaseUrl}/api/tiers`,{params:new HttpParams().set('recherche',recherche)});
+  }
+  creerTiersIdentification(demande:CreationTiersIdentification) {
+    return this.http.post<TiersIdentification>(`${environment.apiBaseUrl}/api/tiers`,demande);
+  }
+  rolesIdentification() {return this.http.get<string[]>(`${environment.apiBaseUrl}/api/tiers/referentiels/roles`);}
+  reglesIdentification() {
+    return this.http.get<RegleBancaireIdentification[]>(`${environment.apiBaseUrl}/api/factures/achats/rapprochement-fournisseurs/regles`,{params:new HttpParams().set('typeRegle','OPERATION_BANCAIRE')});
+  }
+  enregistrerRegleIdentification(tiersId:number,motif:string) {
+    return this.http.post<RegleBancaireIdentification>(`${environment.apiBaseUrl}/api/factures/achats/rapprochement-fournisseurs/regles`,{
+      tiersId,libelle:motif,motif,typeRegle:'OPERATION_BANCAIRE',typeMotif:'CONTIENT',scorePriorite:100,actif:true,
     });
   }
 

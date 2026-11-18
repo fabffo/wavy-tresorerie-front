@@ -389,3 +389,20 @@ export interface BilanAssistant {
   lignes: Array<{ operationId: number; statut: string; code: string | null; message: string; rapprochementId: number | null }>;
 }
 export interface TiersAssistant { id: number; libelle: string; roles: string[]; score: number; actif?: boolean; }
+
+export interface TiersIdentification {
+  id:number;roles:string[];raisonSociale?:string;nomCommercial?:string;enseigne?:string;
+  nom?:string;prenom?:string;nomNormalise?:string;actif?:boolean;
+}
+export interface CreationTiersIdentification {
+  typeTiers:'ORGANISATION'|'PERSONNE_PHYSIQUE';roles:string[];raisonSociale?:string;
+  nom?:string;prenom?:string;natureOrganisation?:string;naturePersonne?:string;categorieMarchand?:string;
+}
+export interface RegleBancaireIdentification {
+  id:number;tiersId:number;motif:string;typeMotif:string;typeRegle:string;actif:boolean;scorePriorite:number;
+}
+export interface BrouillonIdentification {
+  operationId:number;tiersId:number|null;nomTiers:string;motif:string;nouveau:boolean;
+  typeTiers:'ORGANISATION'|'PERSONNE_PHYSIQUE';raisonSociale:string;nom:string;prenom:string;role:string;
+  nature:string;categorieMarchand:string;creationIncertaine:boolean;tiersCree:boolean;
+}

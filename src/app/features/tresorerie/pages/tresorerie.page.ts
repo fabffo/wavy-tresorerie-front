@@ -2,14 +2,15 @@ import { restaurerFiltresEcheances, memoriserFiltresEcheances } from '../../../s
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { finalize, forkJoin } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { finalize, forkJoin, firstValueFrom } from 'rxjs';
 
 import { TresorerieApiService } from '../../../core/services/tresorerie-api.service';
 import { ContexteService } from '../../../core/services/contexte.service';
 import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge.service';
 import { getHttpErrorMessage } from '../../../shared/http/http-error-message';
 import {
-  PropositionCarte,
+  PropositionCarte, BrouillonIdentification, TiersIdentification, RegleBancaireIdentification,
   EtapeAssistant, ApercuAssistant, LigneAssistant, CandidatAssistant, ChoixAssistant, ConfirmationAssistant, BilanAssistant, TiersAssistant,
   ConfirmationCartesResultat,
   PropositionsCarteResultat,
@@ -159,6 +160,7 @@ export class TresoreriePage implements OnInit {
   private sequenceAssistant = 0;
 
   invaliderAssistant(): void {
+    this.sequenceIdentification++;this.identification.set(null);
     this.sequenceAssistant++; this.pageResultatsAssistant.set(1); this.menuOperation.set(null); this.operationConsultee.set(null); this.reglesProposeesAssistant.set({}); this.detailAttenduAssistant=null;
     this.apercuAssistant.set(null); this.detailAssistant.set(null); this.choixAssistant.set([]);
     this.recapAssistant.set(null); this.bilanAssistant.set(null); this.repriseAssistant.set(null); this.tiersConfirmesAssistant.set([]);
@@ -183,9 +185,13 @@ export class TresoreriePage implements OnInit {
     this.invaliderAssistant();
   }
 
+  private filtresAvantIdentification: {contexte:string;tiersReconnu?:string;typeTiersReconnu?:FiltresOperations['typeTiersReconnu']}|null=null;
   changerEtapeAssistant(etape: EtapeAssistant): void {
     if (this.loading()) return;
-    this.etapeAssistant.set(etape); this.invaliderAssistant(); this.previsualiserAssistant();
+    const page=this.apercuAssistant()?this.pageResultatsAssistant():this.pageOperations();
+    if(etape==='TIERS'){this.operationAssistant.set(null);const {tiersReconnu,typeTiersReconnu,...compatibles}=this.filtresOperations();if(tiersReconnu || typeTiersReconnu)this.filtresAvantIdentification={contexte:this.cleContexteCartes(),tiersReconnu,typeTiersReconnu};this.filtresOperations.set(compatibles);}
+    else if(this.filtresAvantIdentification){if(this.filtresAvantIdentification.contexte===this.cleContexteCartes()){const {contexte,...filtres}=this.filtresAvantIdentification;this.filtresOperations.set({...this.filtresOperations(),...Object.fromEntries(Object.entries(filtres).filter(([,v])=>v!==undefined))});}this.filtresAvantIdentification=null;}
+    this.identification.set(null);this.etapeAssistant.set(etape); this.invaliderAssistant(); this.previsualiserAssistant(false,page);
   }
 
   naviguerAssistant(delta: number): void {
@@ -193,7 +199,7 @@ export class TresoreriePage implements OnInit {
     const etape = this.etapesAssistant[index + delta]; if (etape) this.changerEtapeAssistant(etape.id);
   }
 
-  previsualiserAssistant(conserverBilan = false): void {
+  previsualiserAssistant(conserverBilan = false,pageCible=1): void {
     if (this.loading()) return;
     if (this.porteeAssistant() === 'PAGE' && !this.operationAssistant() && !this.operationsPage().length) {
       this.invaliderAssistant(); this.error.set('Cette page ne contient aucune opération à analyser.'); return;
@@ -206,7 +212,7 @@ export class TresoreriePage implements OnInit {
       next: reponse => {
         if (sequence !== this.sequenceAssistant || contexte !== this.cleAssistant()) return;
         const apercu=this.apercuDisponible(reponse);
-        this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu); this.pageResultatsAssistant.set(1);
+        this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu); this.pageResultatsAssistant.set(Math.min(pageCible,this.totalPagesResultatsAssistant()));
         const attente=this.detailAttenduAssistant;this.detailAttenduAssistant=null;
         const detail=apercu.lignes.find(l=>l.operation.id===attente);if(detail)this.examinerOperation(detail);
         const retour=this.tiersRetourAssistant; const operation=this.operationAssistant();
@@ -225,7 +231,7 @@ export class TresoreriePage implements OnInit {
 
   private apercuDisponible(apercu: ApercuAssistant): ApercuAssistant {
     const lignes=apercu.lignes.filter(l=>!this.operationAssistant() || l.operation.id===this.operationAssistant()).filter(l=>!l.operation.rapprochee && l.operation.statutRapprochement!=='RAPPROCHEE' && l.operation.statutRapprochement!=='IGNOREE')
-      .filter(l=>this.etapeAssistant()!=='TIERS' || !!this.operationAssistant() || !l.operation.tiersId);
+      .filter(l=>this.etapeAssistant()!=='TIERS' || !l.operation.tiersId);
     return {...apercu,lignes,eligibles:lignes.filter(l=>!l.bloquee && l.candidats.length>0).length,
       propositions:lignes.reduce((n,l)=>n+l.candidats.length,0),anomalies:lignes.filter(l=>l.anomalies.length || l.candidats.some(c=>c.avertissements.length)).length,restantes:lignes.length};
   }
@@ -237,13 +243,13 @@ export class TresoreriePage implements OnInit {
     if (ligne.bloquee || !this.operationDisponible(ligne.operation) || this.etapeAssistant()==='PIECES') return null;
     return ligne.candidats.length===1 && ligne.candidats[0].sur && !ligne.candidats[0].carte?.conflit ? ligne.candidats[0] : null;
   }
-  examinerOperation(ligne:LigneAssistant): void { this.menuOperation.set(null);this.operationConsultee.set(null);this.detailAssistant.set(ligne);this.tiersManuelsAssistant.set([]); }
+  examinerOperation(ligne:LigneAssistant): void { if(this.etapeAssistant()==='TIERS'){this.ouvrirValidationTiers(ligne);return;} this.menuOperation.set(null);this.operationConsultee.set(null);this.detailAssistant.set(ligne);this.tiersManuelsAssistant.set([]); }
   preparerLigne(ligne:LigneAssistant,candidat:CandidatAssistant): void {
     this.choixAssistant.set([]);this.selectionnerAssistant(ligne,candidat,true);this.preparerAssistant();
   }
   identifierTiersOperation(op:OperationBancaire): void {
     if(this.loading() || !this.operationModifiable(op)) return;
-    this.operationAssistant.set(op.id);this.etapeAssistant.set('TIERS');this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant();
+    this.operationAssistant.set(op.id);this.etapeAssistant.set('TIERS');this.operationAssistant.set(null);this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant();
   }
   examinerSansApercu(op:OperationBancaire): void { this.operationAssistant.set(op.id);this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant(); }
   creerTiersPourOperation(ligne:LigneAssistant): void { this.ouvrirValidationTiers(ligne); }
@@ -392,20 +398,170 @@ export class TresoreriePage implements OnInit {
     if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
   }
 
+  readonly identification = signal<BrouillonIdentification|null>(null);
+  readonly erreurIdentification = signal<string|null>(null);
+  readonly rolesIdentification = signal<string[]>([]);
+  readonly doublonsIdentification = signal<TiersIdentification[]>([]);
+  readonly reglesIdentification = signal<RegleBancaireIdentification[]>([]);
+  readonly chargementIdentification = signal(false);
+  private sequenceIdentification = 0;
+
+  private contexteIdentification():string {
+    return `${this.cleContexteCartes()}:${this.contexteService.utilisateurId?.() ?? ''}`;
+  }
+  private cleRepriseIdentification(operationId:number):string {
+    return `wavy-identification:${this.contexteIdentification()}:${operationId}`;
+  }
+  private normaliserIdentification(v:string):string {
+    return v.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  }
+  nomIdentification(t:TiersIdentification):string { return t.raisonSociale || [t.prenom,t.nom].filter(Boolean).join(' ') || t.nomNormalise || `Tiers ${t.id}`; }
+  modifierIdentification(champ:keyof BrouillonIdentification,valeur:string):void {
+    if(this.loading())return;
+    this.identification.update(d=>d ? {...d,[champ]:valeur} : d);this.erreurIdentification.set(null);
+  }
+  private regleCorrespondante(r:RegleBancaireIdentification,libelle:string):boolean {
+    const texte=this.normaliserIdentification(libelle),motif=this.normaliserIdentification(r.motif);
+    return !!motif && (r.typeMotif==='CONTIENT' ? texte.includes(motif) : texte===motif);
+  }
+  private verifierReglesIdentification(regles:RegleBancaireIdentification[],d:BrouillonIdentification,libelle:string):RegleBancaireIdentification|null {
+    const motif=this.normaliserIdentification(d.motif);
+    const adaptee=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.actif && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && this.regleCorrespondante(r,libelle));
+    if(!adaptee && (!this.motifBancaireValide(d.motif) || !this.normaliserIdentification(libelle).includes(motif)))throw new Error('Corrigez le motif : utilisez un nom distinctif présent dans le libellé, sans date ni référence variable.');
+    const actives=regles.filter(r=>r.actif && r.typeRegle==='OPERATION_BANCAIRE');
+    const conflit=actives.find(r=>r.tiersId!==d.tiersId && (this.regleCorrespondante(r,libelle)
+      || (r.typeMotif==='CONTIENT' && (motif.includes(this.normaliserIdentification(r.motif)) || this.normaliserIdentification(r.motif).includes(motif)))));
+    if(conflit)throw new Error('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
+    const equivalente=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && r.typeMotif==='CONTIENT');
+    if(equivalente && !equivalente.actif)throw new Error('Une règle équivalente est désactivée ; elle ne sera pas réactivée automatiquement.');
+    return actives.find(r=>r.tiersId===d.tiersId && this.regleCorrespondante(r,libelle)) ?? null;
+  }
+
   ouvrirValidationTiers(ligne:LigneAssistant,tiersId?:number):void {
-    if(this.loading() || ligne.bloquee || !this.operationDisponible(ligne.operation))return;
+    if(this.loading() || ligne.bloquee || !this.operationDisponible(ligne.operation) || ligne.operation.tiersId)return;
+    const sequence=++this.sequenceIdentification,contexte=this.contexteIdentification();
+    this.detailAssistant.set(null);this.menuOperation.set(null);this.erreurIdentification.set(null);this.doublonsIdentification.set([]);
     const candidat=ligne.candidats.find(c=>c.tiersId===tiersId);
-    const motif=this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? '');
-    const params=new URLSearchParams({retourAssistant:'1',validationBancaire:'1',operationId:String(ligne.operation.id),motifBancaire:motif});
-    if(tiersId)params.set('tiersProposeId',String(tiersId));
-    this.shellBridge.navigate('tiers','/tiers/nouveau?'+params.toString(),'Identification du tiers et de sa règle');
+    let reprise:{tiersId?:number;motif?:string;incertain?:boolean}|null=null;
+    try {reprise=JSON.parse(sessionStorage.getItem(this.cleRepriseIdentification(ligne.operation.id)) || 'null');}
+    catch {reprise={incertain:true};this.erreurIdentification.set('La reprise locale est illisible. Retrouvez la fiche existante avant de créer.');}
+    const id=tiersId ?? reprise?.tiersId ?? null;
+    this.identification.set({operationId:ligne.operation.id,tiersId:id,nomTiers:candidat?.nomTiers ?? '',
+      motif:((!tiersId || tiersId===reprise?.tiersId)?reprise?.motif:undefined) || this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? ''),nouveau:!id,
+      typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',categorieMarchand:'',
+      creationIncertaine:reprise?.incertain ?? false,tiersCree:!!reprise?.tiersId});
+    this.chargementIdentification.set(true);
+    this.api.reglesIdentification().subscribe({next:regles=>{
+      if(sequence!==this.sequenceIdentification || contexte!==this.contexteIdentification())return;
+      this.reglesIdentification.set(regles);
+      const adaptee=regles.filter(r=>r.actif && r.tiersId===id && this.regleCorrespondante(r,ligne.operation.libelle)).sort((a,b)=>b.motif.length-a.motif.length)[0];
+      if(adaptee && !reprise?.motif)this.identification.update(d=>d ? {...d,motif:adaptee.motif} : d);
+    },error:e=>{if(sequence===this.sequenceIdentification){this.erreurIdentification.set(getHttpErrorMessage(e));this.chargementIdentification.set(false);}},complete:()=>{if(sequence===this.sequenceIdentification)this.chargementIdentification.set(false);}});
+    if(id && !candidat)this.api.lireTiersIdentification(id).subscribe({next:t=>{
+      if(sequence===this.sequenceIdentification && contexte===this.contexteIdentification())this.identification.update(d=>d ? {...d,nomTiers:this.nomIdentification(t)} : d);
+    },error:e=>{if(sequence===this.sequenceIdentification)this.erreurIdentification.set(getHttpErrorMessage(e));}});
+    if(!id && !this.rolesIdentification().length)this.api.rolesIdentification().subscribe({next:r=>{if(contexte===this.contexteIdentification())this.rolesIdentification.set(r.filter(x=>x!=='FOURNISSEUR'));},error:e=>this.erreurIdentification.set(getHttpErrorMessage(e))});
+  }
+
+  choisirPropositionIdentification(ligne:LigneAssistant,candidat:CandidatAssistant):void {
+    this.selectionnerAssistant(ligne,candidat,true);this.ouvrirValidationTiers(ligne,candidat.tiersId);
+  }
+  hypothesesIdentification(ligne:LigneAssistant):Array<{type:'ORGANISATION'|'PERSONNE_PHYSIQUE';nom:string;prenom:string}> {
+    const libelle=ligne.operation.libelle;
+    const contrepartie=libelle.match(/\b(?:vers|pour)\s+(.+)/iu)?.[1] ?? libelle.replace(/^(?:(?:VIREMENT(?: [ÉE]MIS)?|VIR|INST|SEPA|PAIEMENT|CARTE|CB|PRLV)[\s:-]*)+/i,'');
+    const organisation=contrepartie.match(/^([\p{L}\p{N}][\p{L}\p{N} .'&-]*?\b(?:SASU|SAS|SARL|SA|LTD|LIMITED))\b/iu)?.[1];
+    const personne=libelle.match(/\b(?:M\.|Mme\.?\s+|Mr\.?\s+|Monsieur\s+|Madame\s+)\s*([\p{L}][\p{L}'’-]+)/iu);
+    const propositions:Array<{type:'ORGANISATION'|'PERSONNE_PHYSIQUE';nom:string;prenom:string}>=[];
+    if(organisation)propositions.push({type:'ORGANISATION',nom:organisation.trim(),prenom:''});
+    else if(/\b[A-Z0-9-]+\.[A-Z]{2,}\b/i.test(libelle))propositions.push({type:'ORGANISATION',nom:this.proposerMotifBancaire(libelle),prenom:''});
+    if(personne)propositions.push({type:'PERSONNE_PHYSIQUE',nom:personne[1],prenom:''});
+    return propositions;
+  }
+  choisirHypotheseIdentification(p:{type:'ORGANISATION'|'PERSONNE_PHYSIQUE';nom:string;prenom:string}):void {
+    this.identification.update(d=>d ? {...d,typeTiers:p.type,raisonSociale:p.type==='ORGANISATION'?p.nom:'',nom:p.type==='PERSONNE_PHYSIQUE'?p.nom:'',prenom:p.prenom,motif:p.type==='ORGANISATION'?p.nom.toUpperCase():p.nom.toUpperCase()} : d);
+  }
+  choisirExistantIdentification(t:TiersIdentification):void {
+    const ligne=this.ligneAssistant(this.identification()?.operationId ?? 0);if(!ligne || t.actif===false)return;
+    this.choixAssistant.set([]);
+    this.ouvrirValidationTiers({...ligne,candidats:[...ligne.candidats,{...ligne.candidats[0],tiersId:t.id,nomTiers:this.nomIdentification(t)} as CandidatAssistant]},t.id);
+    // Un choix explicite remplace une création incertaine retrouvée ; aucune création supplémentaire.
+    this.identification.update(d=>d ? {...d,tiersId:t.id,nomTiers:this.nomIdentification(t),nouveau:false,creationIncertaine:false} : d);
+  }
+  private sauvegarderRepriseIdentification(d:BrouillonIdentification,incertain:boolean):void {
+    sessionStorage.setItem(this.cleRepriseIdentification(d.operationId),JSON.stringify({tiersId:d.tiersId,motif:d.motif,incertain}));
+  }
+  async retrouverIdentification():Promise<void> {
+    const d=this.identification();if(!d || this.loading())return;
+    const contexte=this.contexteIdentification();this.chargementIdentification.set(true);
+    try {
+      const tiers=await firstValueFrom(this.api.listerTiersIdentification(d.raisonSociale || [d.prenom,d.nom].filter(Boolean).join(' ') || d.motif));
+      if(contexte===this.contexteIdentification())this.doublonsIdentification.set(tiers);
+    }catch(e){this.erreurIdentification.set(getHttpErrorMessage(e));}finally{this.chargementIdentification.set(false);}
+  }
+  async validerIdentification():Promise<void> {
+    const initial=this.identification();if(!initial || this.loading() || this.chargementIdentification())return;
+    const d={...initial},contexte=this.contexteIdentification(),vue=this.cleAssistant();
+    const verifier=()=>{if(!this.contexteService.tenantId() || !this.contexteService.societeCouranteId() || !this.contexteService.utilisateurId?.())throw new Error('Contexte utilisateur incomplet.');if(contexte!==this.contexteIdentification() || vue!==this.cleAssistant() || this.etapeAssistant()!=='TIERS')throw new Error('Le contexte ou la société a changé. Revenez à l’opération.');};
+    this.loading.set(true);this.erreurIdentification.set(null);
+    try {
+      verifier();
+      if(d.creationIncertaine && !d.tiersId)throw new Error('La création a pu réussir. Retrouvez et sélectionnez sa fiche avant de reprendre.');
+      const apercu=await firstValueFrom(this.api.previsualiserAssistant('TIERS','CARTE',{operationIds:[d.operationId]}));verifier();
+      const ligne=apercu.lignes.find(l=>l.operation.id===d.operationId);
+      if(!ligne || ligne.bloquee || !this.operationDisponible(ligne.operation))throw new Error('Cette opération n’est plus disponible.');
+      if(ligne.operation.tiersId && ligne.operation.tiersId!==d.tiersId)throw new Error('Cette opération possède déjà un autre tiers. Actualisez les propositions.');
+      const regles=await firstValueFrom(this.api.reglesIdentification());verifier();
+      let regle=this.verifierReglesIdentification(regles,d,ligne.operation.libelle);
+      if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new Error('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
+      if(!d.tiersId) {
+        if(!d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
+        const nom=d.typeTiers==='ORGANISATION'?d.raisonSociale.trim():[d.prenom.trim(),d.nom.trim()].join(' ');
+        const doublons=await firstValueFrom(this.api.listerTiersIdentification(nom));verifier();
+        if(doublons.length){this.doublonsIdentification.set(doublons);throw new Error('Une fiche peut déjà correspondre. Sélectionnez-la ou précisez l’identité.');}
+        this.sauvegarderRepriseIdentification(d,true);this.identification.update(x=>x?{...x,creationIncertaine:true}:x);
+        let tiers:TiersIdentification;
+        try {tiers=await firstValueFrom(this.api.creerTiersIdentification({typeTiers:d.typeTiers,roles:[d.role],
+          ...(d.typeTiers==='ORGANISATION'?{raisonSociale:d.raisonSociale.trim(),natureOrganisation:d.role==='BANQUE'?'BANQUE':'ENTREPRISE'}:{nom:d.nom.trim(),prenom:d.prenom.trim(),naturePersonne:d.role==='SALARIE'?'SALARIE_INTERNE':'PARTICULIER'}),
+          ...(d.role==='MARCHAND'?{categorieMarchand:d.categorieMarchand}:{}),}));}
+        catch(e){if(e instanceof HttpErrorResponse && [400,401,403,404,422].includes(e.status)){this.sauvegarderRepriseIdentification(d,false);this.identification.update(x=>x?{...x,creationIncertaine:false}:x);}throw e;}
+        // Conserver l’ID avant tout autre appel, même si le contexte vient de changer.
+        d.tiersId=tiers.id;d.nomTiers=this.nomIdentification(tiers);d.tiersCree=true;d.creationIncertaine=false;
+        if(contexte===this.contexteIdentification())this.identification.set({...d,nouveau:false});
+        sessionStorage.setItem(`wavy-identification:${contexte}:${d.operationId}`,JSON.stringify({tiersId:tiers.id,motif:d.motif,incertain:false}));
+        verifier();this.identification.set({...d,nouveau:false});
+      } else {
+        const tiers=await firstValueFrom(this.api.lireTiersIdentification(d.tiersId));verifier();
+        if(tiers.actif===false)throw new Error('Le tiers sélectionné est inactif.');d.nomTiers=this.nomIdentification(tiers);
+      }
+      this.sauvegarderRepriseIdentification(d,false);
+      if(!regle) {
+        regle=await firstValueFrom(this.api.enregistrerRegleIdentification(d.tiersId!,d.motif.trim()));verifier();
+        if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new Error('La règle enregistrée doit être vérifiée avant association.');
+      }
+      if(ligne.operation.tiersId!==d.tiersId) {
+        const bilan=await firstValueFrom(this.api.confirmerAssistant({etape:'TIERS',categorie:'CARTE',perimetre:{operationIds:[d.operationId]},confirmation:true,
+          selections:[{operationId:d.operationId,candidatCle:`MANUEL:${d.tiersId}`,pieceId:null,tiersId:d.tiersId!,montant:0,confirmerNature:false,verifierJustificatif:true,confirmerAffectation:false}]}));verifier();
+        if(bilan.reussis!==1 || !bilan.lignes.some(l=>l.operationId===d.operationId && l.statut==='SUCCES'))throw new Error(bilan.lignes[0]?.message || 'Association non confirmée. Reprenez avec ce même tiers.');
+      }
+      const mettreAJour=(op:OperationBancaire)=>op.id===d.operationId?{...op,tiersId:d.tiersId!,tiersReconnu:d.nomTiers}:op;
+      this.operations.update(ops=>ops.map(mettreAJour));
+      this.apercuAssistant.update(a=>a?this.apercuDisponible({...a,lignes:a.lignes.map(l=>({...l,operation:mettreAJour(l.operation)}))}):a);
+      this.pageResultatsAssistant.set(Math.min(this.pageResultatsAssistant(),this.totalPagesResultatsAssistant()));
+      this.identification.set(null);this.choixAssistant.set([]);this.menuOperation.set(null);
+      sessionStorage.removeItem(this.cleRepriseIdentification(d.operationId));
+    }catch(e){this.erreurIdentification.set(e instanceof Error && !('status' in e)?e.message:getHttpErrorMessage(e));}
+    finally{this.loading.set(false);}
   }
 
   proposerMotifBancaire(libelle: string, nomTiers = ''): string {
     const domaines=[...libelle.toUpperCase().matchAll(/\b(?:WWW\.)?([A-Z0-9][A-Z0-9-]*(?:\.[A-Z][A-Z0-9-]*)+)\b/g)]
       .map(m=>m[1]).filter(d=>!['GMAIL.COM','OUTLOOK.COM','HOTMAIL.COM','YAHOO.COM'].includes(d));
     if (new Set(domaines).size===1) return domaines[0];
+    const societe=libelle.match(/\b(?:vers|pour)\s+([\p{L}\p{N}][\p{L}\p{N} .'&-]*?\b(?:SASU|SAS|SARL|SA|LTD|LIMITED))\b/iu)?.[1];
+    if(societe)return societe.trim().toUpperCase();
     const nettoyer=(texte:string)=>texte.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+    const nomComplet=nettoyer(nomTiers);
+    if(nomComplet.length>=3 && /\b(SASU|SAS|SARL|LTD|LIMITED)\b/.test(nomComplet) && (' '+nettoyer(libelle)+' ').includes(' '+nomComplet+' '))return nomComplet;
     const termes=nettoyer(nomTiers).split(/ +/).filter(t=>t.length>=4 && !['FRANCE','IRELAND','SYSTEMS','SOFTWARE','SERVICES','COMPANY','UNLIMITED','BANQUE','CREDIT'].includes(t));
     const banque=' '+nettoyer(libelle)+' ';
     const reconnu=termes.find(t=>banque.includes(' '+t+' '));
@@ -416,9 +572,10 @@ export class TresoreriePage implements OnInit {
   }
   motifBancaireValide(motif: string): boolean {
     const normalise=motif.trim().toUpperCase();
-    return normalise.length>=3 && normalise.length<=200 && /\p{L}/u.test(normalise)
-      && !/\b\d{1,2}[/-]\d{1,2}\b|\b[A-Z]{0,3}\d{4,}\b/i.test(normalise)
-      && !['VIR','VIREMENT','VIREMENT SEPA','SEPA','PAIEMENT','PAIEMENT CB','CARTE','SALAIRE','FRAIS','COMMISSION','REMBOURSEMENT'].includes(normalise);
+    const distinctif=normalise.normalize('NFD').replace(/\p{M}/gu,'').replace(/\b(VIR|VIREMENT|EMIS|RECU|INST|SEPA|PAIEMENT|CARTE|CB|FACTURE|VERS|POUR|PAR|DU|DE|LA|LE|PRELEVEMENT|ACHAT|FRAIS|COMMISSION|REMBOURSEMENT)\b/g,' ');
+    return /[A-Z]{3}/.test(distinctif) && normalise.length>=3 && normalise.length<=200 && /\p{L}/u.test(normalise)
+      && !/\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b|\b[A-Z]{0,3}\d{4,}[A-Z0-9]*\b/i.test(normalise)
+      && !['VIR','VIREMENT','VIREMENT SEPA','SEPA','PAIEMENT','PAIEMENT CB','CARTE','SALAIRE','FRAIS','COMMISSION','REMBOURSEMENT','FACTURE','VIR INST','VIR INST VERS'].includes(normalise);
   }
   modifierRegleProposee(id: number, champ: 'motif'|'memoriser', valeur: string|boolean): void {
     if(this.loading()) return;
@@ -495,7 +652,7 @@ export class TresoreriePage implements OnInit {
   readonly totalPagesResultatsAssistant = computed(() => Math.max(1,Math.ceil((this.apercuAssistant()?.lignes.length ?? 0)/this.taillePageOperations())));
   readonly operationsAffichees = computed(() => {
     const apercu=this.apercuAssistant();
-    if (!apercu) return this.operationsPage();
+    if (!apercu) return this.etapeAssistant()==='TIERS' ? this.operationsPage().filter(o=>!o.tiersId) : this.operationsPage();
     const debut=(this.pageResultatsAssistant()-1)*this.taillePageOperations();
     const tri=this.triOperations();
     const cle=(tri.sortBy==='compte' ? 'compteBancaireLibelle' : tri.sortBy) as keyof OperationBancaire;
