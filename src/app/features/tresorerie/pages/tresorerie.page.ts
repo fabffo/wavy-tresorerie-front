@@ -92,7 +92,6 @@ export class TresoreriePage implements OnInit {
   readonly modeCompte = signal<ModeCompte>('liste');
   readonly propositionsCartes = signal<PropositionsCarteResultat | null>(null);
   private contexteCartes: string | null = null;
-  readonly ongletOperations = signal<'operations' | 'assistant'>('operations');
   readonly selectionCartes = signal<Set<string>>(new Set());
   readonly recapitulatifCartes = signal<PropositionCarte[]>([]);
   readonly bilanCartes = signal<ConfirmationCartesResultat | null>(null);
@@ -135,6 +134,10 @@ export class TresoreriePage implements OnInit {
     { id: 'FOURNISSEURS', libelle: 'Factures fournisseurs' }, { id: 'PIECES', libelle: 'Opérations sans facture' },
   ];
   readonly etapeAssistant = signal<EtapeAssistant>('TIERS');
+  readonly pageResultatsAssistant = signal(1);
+  readonly precedentePage = (page: number) => Math.max(1,page-1);
+  readonly suivantePage = (page: number) => page+1;
+  private tiersRetourAssistant: number | null = null;
   readonly categorieAssistant = signal('CARTE');
   readonly porteeAssistant = signal<'FILTRES' | 'PAGE'>('FILTRES');
   readonly operationAssistant = signal<number | null>(null);
@@ -142,7 +145,7 @@ export class TresoreriePage implements OnInit {
   readonly detailAssistant = signal<LigneAssistant | null>(null);
   readonly choixAssistant = signal<Array<{ ligne: LigneAssistant; candidat: CandidatAssistant; choix: ChoixAssistant }>>([]);
   readonly recapAssistant = signal<ConfirmationAssistant | null>(null);
-  readonly tiersConfirmesAssistant = signal<Array<{ id: number; nom: string; operation: number }>>([]);
+  readonly tiersConfirmesAssistant = signal<Array<{ id: number; nom: string; operation: number; libelle: string }>>([]);
   readonly bilanAssistant = signal<BilanAssistant | null>(null);
   readonly repriseAssistant = signal<ConfirmationAssistant | null>(null);
   readonly tiersManuelsAssistant = signal<TiersAssistant[]>([]);
@@ -152,7 +155,7 @@ export class TresoreriePage implements OnInit {
   private sequenceAssistant = 0;
 
   invaliderAssistant(): void {
-    this.sequenceAssistant++;
+    this.sequenceAssistant++; this.pageResultatsAssistant.set(1);
     this.apercuAssistant.set(null); this.detailAssistant.set(null); this.choixAssistant.set([]);
     this.recapAssistant.set(null); this.bilanAssistant.set(null); this.repriseAssistant.set(null); this.tiersConfirmesAssistant.set([]);
     this.tiersManuelsAssistant.set([]); this.contexteApercuAssistant = null; this.contexteRepriseAssistant = null;
@@ -164,13 +167,13 @@ export class TresoreriePage implements OnInit {
     return { ...this.filtresOperations(), operationIds };
   }
 
-  private cleAssistant(): string {
-    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.perimetreAssistant()]);
+  private cleAssistant(avecPage = true): string {
+    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.porteeAssistant(), this.operationAssistant(), avecPage ? this.perimetreAssistant() : this.filtresOperations()]);
   }
 
   ouvrirAssistant(operation?: OperationBancaire): void {
     if (this.loading()) return;
-    this.ongletOperations.set('assistant'); this.operationAssistant.set(operation?.id ?? null);
+    this.operationAssistant.set(operation?.id ?? null);
     this.etapeAssistant.set(!operation?.tiersId ? 'TIERS' : operation.natureOperation === 'SALAIRE' ? 'SALAIRES'
       : operation.natureOperation === 'NOTE_DE_FRAIS' ? 'NOTES_FRAIS' : operation.sens === 'CREDIT' ? 'CLIENTS' : 'FOURNISSEURS');
     this.invaliderAssistant();
@@ -178,7 +181,7 @@ export class TresoreriePage implements OnInit {
 
   changerEtapeAssistant(etape: EtapeAssistant): void {
     if (this.loading()) return;
-    this.etapeAssistant.set(etape); this.invaliderAssistant();
+    this.etapeAssistant.set(etape); this.invaliderAssistant(); this.previsualiserAssistant();
   }
 
   naviguerAssistant(delta: number): void {
@@ -198,7 +201,15 @@ export class TresoreriePage implements OnInit {
     this.api.previsualiserAssistant(this.etapeAssistant(), this.categorieAssistant(), this.perimetreAssistant()).subscribe({
       next: apercu => {
         if (sequence !== this.sequenceAssistant || contexte !== this.cleAssistant()) return;
-        this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu);
+        this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu); this.pageResultatsAssistant.set(1);
+        const retour=this.tiersRetourAssistant; const operation=this.operationAssistant();
+        const ligne=apercu.lignes.find(l => l.operation.id===operation);
+        if (retour && ligne && this.etapeAssistant()==='TIERS') {
+          this.tiersRetourAssistant=null;
+          this.api.obtenirTiersAssistant(retour).subscribe({next: tiers => {
+            if (contexte===this.cleAssistant() && tiers.actif!==false) this.choisirTiersManuelAssistant(ligne,tiers,false);
+          },error: e => { if(contexte===this.cleAssistant()) this.error.set(getHttpErrorMessage(e)); }});
+        }
       },
       error: e => { if (contexte === this.cleAssistant()) this.error.set(getHttpErrorMessage(e)); this.loading.set(false); },
       complete: () => this.loading.set(false),
@@ -272,19 +283,19 @@ export class TresoreriePage implements OnInit {
   confirmerAssistant(): void {
     const demande = this.recapAssistant();
     if (!demande || this.loading() || this.contexteApercuAssistant !== this.cleAssistant()) return;
-    const contexte = this.cleAssistant();
+    const contexte = this.cleAssistant(); const contexteVue=this.cleAssistant(false);
     this.loading.set(true); this.error.set(null); this.recapAssistant.set(null);
     this.api.confirmerAssistant(demande).subscribe({
       next: bilan => {
         this.loading.set(false); if (contexte !== this.cleAssistant()) return;
         this.bilanAssistant.set(bilan);
         if (demande.etape === 'TIERS') this.tiersConfirmesAssistant.set(this.choixAssistant().filter(s => bilan.lignes.some(r => r.operationId === s.choix.operationId && r.statut === 'SUCCES'))
-          .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId })));
+          .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId, libelle:s.ligne.operation.libelle })));
         const selections = demande.selections.filter(s => bilan.lignes.some(r => r.operationId === s.operationId && r.statut === 'A_REPRENDRE'));
         this.repriseAssistant.set(selections.length ? { ...demande, selections } : null);
         this.contexteRepriseAssistant = contexte;
-        this.chargerOperations(); this.api.dashboard().subscribe({ next: stats => this.dashboard.set(stats) });
-        this.previsualiserAssistant(true);
+        this.chargerOperations(() => { if (contexteVue===this.cleAssistant(false)) this.previsualiserAssistant(true); },true);
+        this.api.dashboard().subscribe({ next: stats => this.dashboard.set(stats) });
       },
       error: e => {
         this.loading.set(false); if (contexte !== this.cleAssistant()) return;
@@ -308,9 +319,9 @@ export class TresoreriePage implements OnInit {
     }, error: e => this.error.set(getHttpErrorMessage(e)) });
   }
 
-  choisirTiersManuelAssistant(ligne: LigneAssistant, tiers: TiersAssistant): void {
+  choisirTiersManuelAssistant(ligne: LigneAssistant, tiers: TiersAssistant, selectionner = true): void {
     const type: TypeTiersReconnu = tiers.roles.includes('SALARIE') ? 'SALARIE' : tiers.roles.includes('CLIENT') ? 'CLIENT'
-      : tiers.roles.includes('FOURNISSEUR_SERVICES') ? 'FOURNISSEUR_SERVICE' : tiers.roles.includes('FOURNISSEUR_GENERAL') ? 'FOURNISSEUR'
+      : tiers.roles.some(r=>['FOURNISSEUR_SERVICES','PRESTATAIRE'].includes(r)) ? 'FOURNISSEUR_SERVICE' : tiers.roles.some(r=>['FOURNISSEUR_GENERAL','FOURNISSEUR','MARCHAND'].includes(r)) ? 'FOURNISSEUR'
       : tiers.roles.some(r => ['ORGANISME_FISCAL', 'ORGANISME_SOCIAL'].includes(r)) ? 'ADMINISTRATION' : 'AUTRE';
     const candidat: CandidatAssistant = { cle: `MANUEL:${tiers.id}`, tiersId: tiers.id, nomTiers: tiers.libelle, typeTiers: type,
       pieceId: null, numeroPiece: null, typePiece: 'TIERS', montantDisponible: 0, montantPropose: 0, datePiece: null, dateEcheance: null,
@@ -318,12 +329,22 @@ export class TresoreriePage implements OnInit {
     const enrichie = { ...ligne, candidats: [...ligne.candidats.filter(c => c.cle !== candidat.cle), candidat] };
     this.detailAssistant.set(enrichie);
     this.apercuAssistant.update(a => a ? { ...a, lignes: a.lignes.map(l => l.operation.id === ligne.operation.id ? enrichie : l) } : a);
-    this.selectionnerAssistant(enrichie, candidat, true);
+    if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
   }
 
-  ouvrirTiersAssistant(id?: number, origine?: number): void {
+  proposerMotifBancaire(libelle: string): string {
+    return libelle.normalize('NFKC').replace(/\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b/g,' ')
+      .replace(/\b[A-Z]{0,3}\d{4,}[A-Z0-9]*\b/gi,' ').replace(/[£€$]/g,' ').replace(/\b(PAIEMENT|CARTE|CB|VIREMENT|VIR|SEPA|PRLV|PRELEVEMENT|ACHAT)\b/gi,' ')
+      .replace(/\s+/g,' ').trim().slice(0,200) || libelle.trim().slice(0,200);
+  }
+  ouvrirTiersAssistant(id?: number, origine?: number, proposerRegle = false): void {
     const operationId = origine ?? this.detailAssistant()?.operation.id ?? this.operationAssistant();
-    const retour = `retourAssistant=1${operationId ? `&operationId=${operationId}` : ''}`;
+    const detail=this.detailAssistant()?.operation;
+    const op=(detail?.id===operationId ? detail : null) ?? this.choixAssistant().find(s=>s.choix.operationId===operationId)?.ligne.operation
+      ?? this.apercuAssistant()?.lignes.find(l=>l.operation.id===operationId)?.operation;
+    const libelle=op?.libelle ?? this.tiersConfirmesAssistant().find(t=>t.operation===operationId)?.libelle;
+    const motif=proposerRegle && libelle ? this.proposerMotifBancaire(libelle) : '';
+    const retour = `retourAssistant=1${operationId ? `&operationId=${operationId}` : ''}${motif && id ? `&proposerRegle=1&motifBancaire=${encodeURIComponent(motif)}` : ''}`;
     this.shellBridge.navigate('tiers', id ? `/tiers/${id}?${retour}` : `/tiers/nouveau?${retour}`, id ? 'Fiche et règles bancaires' : 'Créer un tiers après recherche des doublons');
   }
 
@@ -383,6 +404,27 @@ export class TresoreriePage implements OnInit {
 
   readonly titre = computed(() => this.onglets.find((item) => item.id === this.onglet())?.label ?? 'Trésorerie');
   readonly operationsPage = computed(() => this.operations());
+  readonly totalPagesResultatsAssistant = computed(() => Math.max(1,Math.ceil((this.apercuAssistant()?.lignes.length ?? 0)/this.taillePageOperations())));
+  readonly operationsAffichees = computed(() => {
+    const apercu=this.apercuAssistant();
+    if (!apercu) return this.operationsPage();
+    const debut=(this.pageResultatsAssistant()-1)*this.taillePageOperations();
+    const tri=this.triOperations();
+    const cle=(tri.sortBy==='compte' ? 'compteBancaireLibelle' : tri.sortBy) as keyof OperationBancaire;
+    const operations=apercu.lignes.map(l=>l.operation).sort((a,b)=>{
+      const gauche=a[cle] ?? '';const droite=b[cle] ?? '';
+      const ordre=typeof gauche==='number' && typeof droite==='number' ? gauche-droite : String(gauche).localeCompare(String(droite),'fr',{numeric:true});
+      return tri.sortDirection==='DESC' ? -ordre : ordre;
+    });
+    return operations.slice(debut,debut+this.taillePageOperations());
+  });
+  revenirOperationsFiltrees(): void {
+    if (this.loading()) return;
+    this.operationAssistant.set(null);this.invaliderAssistant();this.loading.set(true);
+    this.chargerOperations(()=>this.loading.set(false));
+  }
+  ligneAssistant(id: number): LigneAssistant | null { return this.apercuAssistant()?.lignes.find(l=>l.operation.id===id) ?? null; }
+
   readonly rapprochementsProposes = computed(() => this.rapprochements().filter((rapprochement) => rapprochement.statut === 'PROPOSE'));
   readonly totalRapprochementManuel = computed(() => this.candidatesRapprochement()
     .filter((facture) => facture.selectionnee)
@@ -424,7 +466,9 @@ export class TresoreriePage implements OnInit {
     this.route.queryParamMap.subscribe((params) => {
       this.onglet.set(this.normaliserOnglet(params.get('vue')));
       if (params.get('assistant') === 'tiers') {
-        this.ongletOperations.set('assistant'); this.etapeAssistant.set('TIERS');
+        this.etapeAssistant.set('TIERS');
+        const cree=Number(params.get('tiersProposeId'));
+        this.tiersRetourAssistant=Number.isSafeInteger(cree) && cree>0 ? cree : null;
         const operation = Number(params.get('operationId'));
         if (Number.isSafeInteger(operation) && operation > 0) this.operationAssistant.set(operation);
       }
@@ -567,6 +611,7 @@ export class TresoreriePage implements OnInit {
         this.chargerOperations(() => {
           fin();
           this.invaliderAssistant();
+          this.previsualiserAssistant();
         });
         break;
       case 'previsionnel':
@@ -691,17 +736,19 @@ export class TresoreriePage implements OnInit {
     this.changerOnglet('operations');
   }
 
-  chargerOperations(fin?: () => void): void {
+  chargerOperations(fin?: () => void, conserverBilan = false): void {
+    if (!conserverBilan) this.invaliderAssistant();
+    let pageCorrigee=false;
     this.api.operations(this.filtresOperations(), this.parametresOperations()).subscribe({
       next: (data) => {
         this.appliquerPageOperations(data);
         if (this.pageOperations() > this.totalPagesOperations()) {
-          this.pageOperations.set(this.totalPagesOperations());
-          this.chargerOperations();
+          pageCorrigee=true;this.pageOperations.set(this.totalPagesOperations());
+          this.chargerOperations(fin,conserverBilan);
         }
       },
-      error: (e) => this.error.set(getHttpErrorMessage(e)),
-      complete: fin,
+      error: (e) => {this.error.set(getHttpErrorMessage(e));this.loading.set(false);},
+      complete: () => {if (!pageCorrigee) fin?.();},
     });
   }
 
@@ -725,6 +772,7 @@ export class TresoreriePage implements OnInit {
       sortBy,
       sortDirection: triCourant.sortBy === sortBy && triCourant.sortDirection === 'DESC' ? 'ASC' : 'DESC',
     });
+    if (this.apercuAssistant()) { this.pageResultatsAssistant.set(1); return; }
     this.pageOperations.set(1);
     this.loading.set(true);
     this.chargerOperations(() => this.loading.set(false));
@@ -865,12 +913,6 @@ export class TresoreriePage implements OnInit {
 
   private cleContexteCartes(): string {
     return `${this.contexteService.tenantId()}:${this.contexteService.societeCouranteId()}`;
-  }
-
-  changerOngletOperations(onglet: 'operations' | 'assistant'): void {
-    if (this.loading()) return;
-    this.ongletOperations.set(onglet);
-    if (onglet === 'assistant') this.invaliderAssistant();
   }
 
   cleCarte(p: PropositionCarte): string { return `${p.operationId}:${p.factureId}`; }

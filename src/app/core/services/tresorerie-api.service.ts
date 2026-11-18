@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import { map } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import {
@@ -117,6 +118,12 @@ export class TresorerieApiService {
 
   rapprocherSalaires() {
     return this.http.post<RapprochementFacturesResultat>(`${this.baseUrl}/operations-bancaires/rapprochement-salaires`, {});
+  }
+
+  obtenirTiersAssistant(id: number) {
+    return this.http.get<{id:number;roles:string[];raisonSociale?:string;nom?:string;prenom?:string;nomNormalise?:string;actif?:boolean}>(`${environment.apiBaseUrl}/api/tiers/${id}`).pipe(map(t => ({
+      id:t.id,roles:t.roles ?? [],libelle:t.raisonSociale || [t.prenom,t.nom].filter(Boolean).join(' ') || t.nomNormalise || `Tiers ${t.id}`,score:1,actif:t.actif,
+    } as TiersAssistant)));
   }
 
   previsualiserAssistant(etape: EtapeAssistant, categorie: string, perimetre: PerimetreAssistant) {

@@ -388,4 +388,4 @@ export interface BilanAssistant {
   reussis: number; refuses: number; conflits: number; aReprendre: number;
   lignes: Array<{ operationId: number; statut: string; code: string | null; message: string; rapprochementId: number | null }>;
 }
-export interface TiersAssistant { id: number; libelle: string; roles: string[]; score: number; }
+export interface TiersAssistant { id: number; libelle: string; roles: string[]; score: number; actif?: boolean; }

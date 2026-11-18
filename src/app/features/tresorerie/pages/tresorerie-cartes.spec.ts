@@ -21,6 +21,7 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
   beforeEach(() => {
     societe = vi.fn(() => 1);
     api = { proposerCartes: vi.fn().mockReturnValue(of({ operationsExaminees: 78, piecesExaminees: 31, operationsSansMatch: 1, propositions: [p] })), confirmerCarte: vi.fn().mockReturnValue(of({})), confirmerCartes: vi.fn().mockReturnValue(of({ reussis: 1, refuses: 0, conflits: 0, lignes: [] })), rapprochements: vi.fn().mockReturnValue(of([])) };
+    Object.assign(api,{previsualiserAssistant:vi.fn(()=>of({etape:'TIERS',categorie:'CARTE',operationsPerimetre:0,eligibles:0,piecesDisponibles:0,propositions:0,anomalies:0,traitees:0,restantes:0,montantEligible:0,lignes:[]}))});
     TestBed.configureTestingModule({ providers: [
       { provide: TresorerieApiService, useValue: api },
       { provide: ActivatedRoute, useValue: {} }, { provide: Router, useValue: {} },
@@ -72,10 +73,10 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
     api.proposerCartes.mockReturnValue(of({ operationsExaminees: 77, piecesExaminees: 31, operationsSansMatch: 60, propositions }));
     page.proposerCartes();
   }
-  it('change de sous-onglet sans requête répétée et conserve filtres, tri et pagination', () => {
+  it('change d’étape sans requête répétée et conserve filtres, tri et pagination', () => {
     page.pageOperations.set(4); page.filtresOperations.set({ tiersReconnu: 'INDIGO' });
     chargerPropositions([sure]);
-    page.changerOngletOperations('assistant');page.changerOngletOperations('operations');page.changerOngletOperations('assistant');
+    page.changerEtapeAssistant('TIERS');page.changerEtapeAssistant('NOTES_FRAIS');page.changerEtapeAssistant('FOURNISSEURS');
     expect(api.proposerCartes).toHaveBeenCalledTimes(1);
     expect(page.pageOperations()).toBe(4);expect(page.filtresOperations()).toEqual({ tiersReconnu: 'INDIGO' });
     expect(page.triOperations()).toEqual({ sortBy: 'dateOperation', sortDirection: 'DESC' });
@@ -145,14 +146,14 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
     const fixture = TestBed.createComponent(TresoreriePage);page = fixture.componentInstance;
     page.onglet.set('operations');fixture.detectChanges();
     const html: HTMLElement = fixture.nativeElement;
-    expect(html.querySelectorAll('[role="tablist"] [role="tab"]').length).toBe(2);
+    expect(html.querySelectorAll('[role="tablist"] [role="tab"]').length).toBe(0);
     expect(html.querySelector('.operations-table')).not.toBeNull();
-    chargerPropositions([sure]);page.changerOngletOperations('assistant');fixture.detectChanges();
-    expect(html.querySelector('.operations-table')).toBeNull();
-    expect(html.textContent).toContain('Assistant de rapprochement');
+    chargerPropositions([sure]);page.changerEtapeAssistant('NOTES_FRAIS');fixture.detectChanges();
+    expect(html.querySelectorAll('.operations-table')).toHaveLength(1);
+    expect(html.textContent).not.toContain('Assistant de rapprochement');
     expect(html.querySelectorAll('[aria-label="Étapes du rapprochement"] button')).toHaveLength(6);
     expect(api.confirmerCartes).not.toHaveBeenCalled();
-    page.changerOngletOperations('operations');fixture.detectChanges();expect(html.querySelector('.operations-table')).not.toBeNull();
+    page.changerEtapeAssistant('TIERS');fixture.detectChanges();expect(html.querySelector('.operations-table')).not.toBeNull();
   });
 
 });

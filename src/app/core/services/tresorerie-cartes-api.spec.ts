@@ -43,4 +43,11 @@ describe('Contrat HTTP des propositions carte', () => {
     expect(p.request.method).toBe('POST');expect(p.request.body).toEqual(demande);p.flush({reussis:1,lignes:[]});
   });
 
+  it('charge le tiers créé avec son identité et ses rôles via le GET existant', () => {
+    let tiers:unknown;api.obtenirTiersAssistant(21).subscribe(t=>tiers=t);
+    const r=http.expectOne(req=>req.url.endsWith('/api/tiers/21'));expect(r.request.method).toBe('GET');
+    r.flush({id:21,prenom:'Alice',nom:'Merove',roles:['SALARIE'],actif:true});
+    expect(tiers).toEqual(expect.objectContaining({id:21,libelle:'Alice Merove',roles:['SALARIE'],actif:true}));
+  });
+
 });

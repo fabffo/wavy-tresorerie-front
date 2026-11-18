@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 import { TresoreriePage } from './tresorerie.page';
 import { TresorerieApiService } from '../../../core/services/tresorerie-api.service';
@@ -8,6 +8,8 @@ import { ContexteService } from '../../../core/services/contexte.service';
 import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge.service';
 import { ApercuAssistant, CandidatAssistant, LigneAssistant, OperationBancaire, EtapeAssistant } from '../models/tresorerie.model';
 
+const initialiserPage=TresoreriePage.prototype.ngOnInit;
+const chargerPage=TresoreriePage.prototype.chargerOperations;
 const operation = { id: 1, compteBancaireId: 1, dateOperation: '2026-01-12', libelle: 'Paiement Adobe.com 09/01',
   sens: 'DEBIT', debit: 100, credit: 0, montant: 100, natureOperation: 'FACTURE_FOURNISSEUR', statutClassification: 'CLASSEE_AUTO',
   statutRapprochement: 'NON_RAPPROCHEE', typeOperation: 'PAIEMENT_CB', tiersId: 21, tiersReconnu: 'Adobe', typeTiersReconnu: 'FOURNISSEUR', rapprochee: false } as OperationBancaire;
@@ -47,7 +49,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
 
   it('navigue librement dans les six étapes sans déclencher de traitement', () => {
     page.ouvrirAssistant();page.changerEtapeAssistant('PIECES');page.naviguerAssistant(-1);page.changerEtapeAssistant('TIERS');
-    expect(page.etapesAssistant).toHaveLength(6);expect(api['confirmerAssistant']).not.toHaveBeenCalled();expect(api['previsualiserAssistant']).not.toHaveBeenCalled();
+    expect(page.etapesAssistant).toHaveLength(6);expect(api['confirmerAssistant']).not.toHaveBeenCalled();expect(api['previsualiserAssistant']).toHaveBeenCalled();
   });
   it('transmet tous les filtres et distingue la page du périmètre complet', () => {
     page.filtresOperations.set({ tiersReconnu: 'Adobe', natureOperation: 'FACTURE_FOURNISSEUR', statutRapprochement: 'NON_RAPPROCHEE' });
@@ -63,7 +65,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   });
   it('Rapprocher limite explicitement le périmètre à la ligne sélectionnée', () => {
     page.ouvrirAssistant(operation);page.previsualiserAssistant();
-    expect(api['previsualiserAssistant'].mock.calls[0][2].operationIds).toEqual([1]);expect(page.ongletOperations()).toBe('assistant');
+    expect(api['previsualiserAssistant'].mock.calls[0][2].operationIds).toEqual([1]);expect(page.operationAssistant()).toBe(1);
   });
   it('exige une prévisualisation et une confirmation distincte', () => {
     page.confirmerAssistant();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
@@ -131,13 +133,62 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     page.ouvrirTiersAssistant();expect(navigate).toHaveBeenLastCalledWith('tiers','/tiers/nouveau?retourAssistant=1&operationId=1',expect.any(String));
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
-  it('rend deux onglets, six étapes et un détail unique avec critères et justificatif', () => {
+  it('affiche directement six étapes, les filtres et un tableau unique avec propositions', () => {
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();
     const html: HTMLElement=fixture.nativeElement;expect(html.querySelector('.operations-table')).not.toBeNull();
-    page.ongletOperations.set('assistant');page.etapeAssistant.set('FOURNISSEURS');page.previsualiserAssistant();fixture.detectChanges();
-    expect(html.querySelector('.operations-table')).toBeNull();expect(html.querySelectorAll('[aria-label="Étapes du rapprochement"] button')).toHaveLength(6);
+    page.etapeAssistant.set('FOURNISSEURS');page.previsualiserAssistant();fixture.detectChanges();
+    expect(html.querySelectorAll('.operations-table')).toHaveLength(1);expect(html.querySelector('#onglet-assistant')).toBeNull();expect(html.querySelectorAll('[aria-label="Étapes du rapprochement"] button')).toHaveLength(6);
     page.detailAssistant.set(ligne);fixture.detectChanges();expect(html.querySelector('[aria-label="Détail de la proposition"]')?.textContent).toContain('Date d’achat concordante');
     expect(html.textContent).toContain('Ouvrir la pièce et son justificatif');selectionner();page.preparerAssistant();fixture.detectChanges();
     expect(html.querySelector('[aria-label="Récapitulatif de confirmation"]')?.textContent).toContain('2026-01-09');expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
+  it('transmet un motif proposé vers la fiche Tiers sans créer de règle ni associer le tiers', () => {
+    analyser('TIERS');page.detailAssistant.set({...ligne,operation:{...operation,id:2,libelle:'MICROSOFT'}});page.ouvrirTiersAssistant(21,1,true);
+    expect(navigate).toHaveBeenCalledWith('tiers','/tiers/21?retourAssistant=1&operationId=1&proposerRegle=1&motifBancaire=Adobe.com',expect.any(String));
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+    expect(page.proposerMotifBancaire('VIR SEPA MEROVE 18/11/2026 123456')).toBe('MEROVE');
+    expect(page.proposerMotifBancaire('PAIEMENT MICROSOFT£G134725849 10/01')).toBe('MICROSOFT');
+  });
+  it('au retour de création, propose le nouveau tiers sans enregistrer son association', () => {
+    Object.assign(TestBed.inject(ActivatedRoute),{queryParamMap:of(convertToParamMap({vue:'operations',assistant:'tiers',operationId:'1',tiersProposeId:'99'}))});
+    vi.spyOn(page,'charger').mockImplementation(()=>{});initialiserPage.call(page);
+    api['obtenirTiersAssistant']=vi.fn(()=>of({id:99,libelle:'Alice Merove',roles:['SALARIE'],actif:true}));
+    page.previsualiserAssistant();
+    expect(api['obtenirTiersAssistant']).toHaveBeenCalledWith(99);
+    expect(page.detailAssistant()?.candidats).toEqual(expect.arrayContaining([expect.objectContaining({cle:'MANUEL:99',tiersId:99})]));
+    expect(page.choixAssistant()).toHaveLength(0);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+  it('pagine les opérations prévisualisées sans élargir le périmètre bancaire ni perdre les filtres', () => {
+    const lignes=Array.from({length:26},(_,i)=>({...ligne,operation:{...operation,id:i+1}}));
+    page.filtresOperations.set({tiersReconnu:'Adobe'});page.taillePageOperations.set(25);page.porteeAssistant.set('FILTRES');
+    analyser('FOURNISSEURS',lignes);expect(page.operationsAffichees()).toHaveLength(25);page.pageResultatsAssistant.set(2);
+    expect(page.operationsAffichees()).toHaveLength(1);expect(page.totalPagesResultatsAssistant()).toBe(2);
+    expect(page.operationsPage().map(o=>o.id)).toEqual([1]);expect(page.filtresOperations()).toEqual({tiersReconnu:'Adobe'});
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
+  it('trie les résultats sans rester en chargement et sans déplacer la page bancaire source', () => {
+    page.pageOperations.set(4);analyser('FOURNISSEURS',[
+      {...ligne,operation:{...operation,id:1,libelle:'Adobe'}},{...ligne,operation:{...operation,id:2,libelle:'Microsoft'}},
+    ]);
+    page.trierOperations('libelle');expect(page.loading()).toBe(false);expect(page.pageOperations()).toBe(4);
+    expect(page.operationsAffichees().map(o=>o.libelle)).toEqual(['Microsoft','Adobe']);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
+  it('invalide les propositions après rechargement des opérations modifiées', () => {
+    analyser();selectionner();page.preparerAssistant();
+    api['operations']=vi.fn(()=>of({content:[operation],totalElements:1,totalPages:1}));
+    chargerPage.call(page);
+    expect(page.apercuAssistant()).toBeNull();expect(page.choixAssistant()).toHaveLength(0);expect(page.recapAssistant()).toBeNull();
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
+  it('revient à la dernière page après traitement sans perdre le bilan ni doubler le rafraîchissement', () => {
+    vi.mocked(page.chargerOperations).mockRestore();
+    page.pageOperations.set(4);const bilan={reussis:1,refuses:0,conflits:0,aReprendre:0,lignes:[]};page.bilanAssistant.set(bilan);
+    api['operations']=vi.fn().mockReturnValueOnce(of({content:[],totalElements:1,totalPages:1})).mockReturnValueOnce(of({content:[operation],totalElements:1,totalPages:1}));
+    const fin=vi.fn();chargerPage.call(page,fin,true);
+    expect(page.pageOperations()).toBe(1);expect(api['operations']).toHaveBeenCalledTimes(2);expect(fin).toHaveBeenCalledTimes(1);expect(page.bilanAssistant()).toEqual(bilan);
+  });
+
 });
