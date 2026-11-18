@@ -138,14 +138,18 @@ export class TresoreriePage implements OnInit {
   readonly precedentePage = (page: number) => Math.max(1,page-1);
   readonly suivantePage = (page: number) => page+1;
   private tiersRetourAssistant: number | null = null;
+  private detailAttenduAssistant: number | null = null;
   readonly categorieAssistant = signal('CARTE');
   readonly porteeAssistant = signal<'FILTRES' | 'PAGE'>('FILTRES');
   readonly operationAssistant = signal<number | null>(null);
   readonly apercuAssistant = signal<ApercuAssistant | null>(null);
   readonly detailAssistant = signal<LigneAssistant | null>(null);
+  readonly menuOperation = signal<number | null>(null);
+  readonly operationConsultee = signal<OperationBancaire | null>(null);
+  readonly reglesProposeesAssistant = signal<Record<number,{memoriser:boolean;motif:string;tiersId?:number}>>({});
   readonly choixAssistant = signal<Array<{ ligne: LigneAssistant; candidat: CandidatAssistant; choix: ChoixAssistant }>>([]);
   readonly recapAssistant = signal<ConfirmationAssistant | null>(null);
-  readonly tiersConfirmesAssistant = signal<Array<{ id: number; nom: string; operation: number; libelle: string }>>([]);
+  readonly tiersConfirmesAssistant = signal<Array<{ id: number; nom: string; operation: number; libelle: string; memoriser?: boolean; motif?: string }>>([]);
   readonly bilanAssistant = signal<BilanAssistant | null>(null);
   readonly repriseAssistant = signal<ConfirmationAssistant | null>(null);
   readonly tiersManuelsAssistant = signal<TiersAssistant[]>([]);
@@ -155,7 +159,7 @@ export class TresoreriePage implements OnInit {
   private sequenceAssistant = 0;
 
   invaliderAssistant(): void {
-    this.sequenceAssistant++; this.pageResultatsAssistant.set(1);
+    this.sequenceAssistant++; this.pageResultatsAssistant.set(1); this.menuOperation.set(null); this.operationConsultee.set(null); this.reglesProposeesAssistant.set({}); this.detailAttenduAssistant=null;
     this.apercuAssistant.set(null); this.detailAssistant.set(null); this.choixAssistant.set([]);
     this.recapAssistant.set(null); this.bilanAssistant.set(null); this.repriseAssistant.set(null); this.tiersConfirmesAssistant.set([]);
     this.tiersManuelsAssistant.set([]); this.contexteApercuAssistant = null; this.contexteRepriseAssistant = null;
@@ -199,9 +203,12 @@ export class TresoreriePage implements OnInit {
     if (!conserverBilan) this.bilanAssistant.set(null);
     this.loading.set(true); this.error.set(null);
     this.api.previsualiserAssistant(this.etapeAssistant(), this.categorieAssistant(), this.perimetreAssistant()).subscribe({
-      next: apercu => {
+      next: reponse => {
         if (sequence !== this.sequenceAssistant || contexte !== this.cleAssistant()) return;
+        const apercu=this.apercuDisponible(reponse);
         this.contexteApercuAssistant = contexte; this.apercuAssistant.set(apercu); this.pageResultatsAssistant.set(1);
+        const attente=this.detailAttenduAssistant;this.detailAttenduAssistant=null;
+        const detail=apercu.lignes.find(l=>l.operation.id===attente);if(detail)this.examinerOperation(detail);
         const retour=this.tiersRetourAssistant; const operation=this.operationAssistant();
         const ligne=apercu.lignes.find(l => l.operation.id===operation);
         if (retour && ligne && this.etapeAssistant()==='TIERS') {
@@ -215,6 +222,33 @@ export class TresoreriePage implements OnInit {
       complete: () => this.loading.set(false),
     });
   }
+
+  private apercuDisponible(apercu: ApercuAssistant): ApercuAssistant {
+    const lignes=apercu.lignes.filter(l=>!this.operationAssistant() || l.operation.id===this.operationAssistant()).filter(l=>!l.operation.rapprochee && l.operation.statutRapprochement!=='RAPPROCHEE' && l.operation.statutRapprochement!=='IGNOREE')
+      .filter(l=>this.etapeAssistant()!=='TIERS' || !!this.operationAssistant() || !l.operation.tiersId);
+    return {...apercu,lignes,eligibles:lignes.filter(l=>!l.bloquee && l.candidats.length>0).length,
+      propositions:lignes.reduce((n,l)=>n+l.candidats.length,0),anomalies:lignes.filter(l=>l.anomalies.length || l.candidats.some(c=>c.avertissements.length)).length,restantes:lignes.length};
+  }
+  montantSigne(operation: OperationBancaire): number { return operation.sens==='DEBIT' ? -Math.abs(operation.debit || operation.montant) : Math.abs(operation.credit || operation.montant); }
+  basculerActions(id:number): void { this.menuOperation.set(this.menuOperation()===id ? null : id); }
+  operationDisponible(op:OperationBancaire): boolean { return !op.rapprochee && !['RAPPROCHEE','IGNOREE'].includes(op.statutRapprochement); }
+  operationModifiable(op:OperationBancaire): boolean { return !op.rapprochee && op.statutRapprochement!=='RAPPROCHEE' && !this.ligneAssistant(op.id)?.bloquee; }
+  propositionSure(ligne:LigneAssistant): CandidatAssistant|null {
+    if (ligne.bloquee || !this.operationDisponible(ligne.operation) || this.etapeAssistant()==='PIECES') return null;
+    return ligne.candidats.length===1 && ligne.candidats[0].sur && !ligne.candidats[0].carte?.conflit ? ligne.candidats[0] : null;
+  }
+  examinerOperation(ligne:LigneAssistant): void { this.menuOperation.set(null);this.operationConsultee.set(null);this.detailAssistant.set(ligne);this.tiersManuelsAssistant.set([]); }
+  preparerLigne(ligne:LigneAssistant,candidat:CandidatAssistant): void {
+    this.choixAssistant.set([]);this.selectionnerAssistant(ligne,candidat,true);this.preparerAssistant();
+  }
+  identifierTiersOperation(op:OperationBancaire): void {
+    if(this.loading() || !this.operationModifiable(op)) return;
+    this.operationAssistant.set(op.id);this.etapeAssistant.set('TIERS');this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant();
+  }
+  examinerSansApercu(op:OperationBancaire): void { this.operationAssistant.set(op.id);this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant(); }
+  creerTiersPourOperation(ligne:LigneAssistant): void { this.examinerOperation(ligne);this.ouvrirTiersAssistant(); }
+  revenirPerimetreFiltre(): void { this.operationAssistant.set(null);this.invaliderAssistant();this.previsualiserAssistant(); }
+  changerTailleResultats(value:string): void { const size=Number(value);if([10,25,50,100].includes(size)){this.taillePageOperations.set(size);this.pageResultatsAssistant.set(1);} }
 
   estSelectionAssistant(ligne: LigneAssistant, candidat: CandidatAssistant): boolean {
     return this.choixAssistant().some(s => s.choix.operationId === ligne.operation.id && s.choix.candidatCle === candidat.cle);
@@ -237,7 +271,14 @@ export class TresoreriePage implements OnInit {
     this.choixAssistant.set([...autres, { ligne, candidat, choix: { operationId: ligne.operation.id,
       candidatCle: candidat.cle, pieceId: candidat.pieceId, tiersId: candidat.tiersId, montant: candidat.montantPropose,
       confirmerNature: false, verifierJustificatif: false, confirmerAffectation: candidat.carte?.affectationRequise ?? false,
-    } }]); this.recapAssistant.set(null); this.error.set(null);
+    } }]);
+    if (candidat.typePiece==='TIERS') {
+      if (!candidat.sur || candidat.cle.startsWith('MANUEL:')) {
+        const precedente=this.reglesProposeesAssistant()[ligne.operation.id];
+        if (!precedente || precedente.tiersId!==candidat.tiersId) this.reglesProposeesAssistant.update(r=>({...r,[ligne.operation.id]:{memoriser:true,motif:this.proposerMotifBancaire(ligne.operation.libelle,candidat.nomTiers),tiersId:candidat.tiersId}}));
+      } else this.reglesProposeesAssistant.update(r=>{const copie={...r};delete copie[ligne.operation.id];return copie;});
+    }
+    this.recapAssistant.set(null); this.error.set(null);
   }
 
   modifierChoixAssistant(operationId: number, cle: string, champ: 'montant' | 'confirmerNature' | 'verifierJustificatif' | 'confirmerAffectation', valeur: number | boolean): void {
@@ -249,8 +290,8 @@ export class TresoreriePage implements OnInit {
   selectionnerSuresAssistant(): void {
     this.choixAssistant.set([]);
     for (const ligne of this.apercuAssistant()?.lignes ?? []) {
-      if (ligne.bloquee) continue;
-      const sures = ligne.candidats.filter(c => c.sur);
+      if (ligne.bloquee || !this.operationDisponible(ligne.operation) || ligne.candidats.length !== 1) continue;
+      const sures = ligne.candidats.filter(c => c.sur && !c.carte?.conflit);
       if (sures.length === 1) this.selectionnerAssistant(ligne, sures[0], true);
       if (['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) && this.choixAssistant().length) break;
     }
@@ -276,6 +317,7 @@ export class TresoreriePage implements OnInit {
         this.error.set('La sélection dépasse le montant bancaire ; réduisez les affectations.'); return;
       }
     }
+    this.detailAssistant.set(null); this.menuOperation.set(null);
     this.recapAssistant.set({ etape: this.etapeAssistant(), categorie: this.categorieAssistant(), perimetre: this.perimetreAssistant(),
       confirmation: true, selections: selections.map(s => ({ ...s.choix })) });
   }
@@ -284,18 +326,26 @@ export class TresoreriePage implements OnInit {
     const demande = this.recapAssistant();
     if (!demande || this.loading() || this.contexteApercuAssistant !== this.cleAssistant()) return;
     const contexte = this.cleAssistant(); const contexteVue=this.cleAssistant(false);
+    if (demande.etape==='TIERS' && demande.selections.some(c=>{const r=this.reglesProposeesAssistant()[c.operationId];return r?.memoriser && !this.motifBancaireValide(r.motif);})) {
+      this.error.set('Choisissez un motif bancaire distinctif, sans date ni référence variable, ou décochez sa mémorisation.');return;
+    }
+    const regles={...this.reglesProposeesAssistant()};
     this.loading.set(true); this.error.set(null); this.recapAssistant.set(null);
     this.api.confirmerAssistant(demande).subscribe({
       next: bilan => {
         this.loading.set(false); if (contexte !== this.cleAssistant()) return;
         this.bilanAssistant.set(bilan);
         if (demande.etape === 'TIERS') this.tiersConfirmesAssistant.set(this.choixAssistant().filter(s => bilan.lignes.some(r => r.operationId === s.choix.operationId && r.statut === 'SUCCES'))
-          .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId, libelle:s.ligne.operation.libelle })));
+          .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId, libelle:s.ligne.operation.libelle,memoriser:regles[s.choix.operationId]?.memoriser ?? false,motif:regles[s.choix.operationId]?.motif })));
         const selections = demande.selections.filter(s => bilan.lignes.some(r => r.operationId === s.operationId && r.statut === 'A_REPRENDRE'));
         this.repriseAssistant.set(selections.length ? { ...demande, selections } : null);
         this.contexteRepriseAssistant = contexte;
         this.chargerOperations(() => { if (contexteVue===this.cleAssistant(false)) this.previsualiserAssistant(true); },true);
         this.api.dashboard().subscribe({ next: stats => this.dashboard.set(stats) });
+        const memorisation=this.tiersConfirmesAssistant();
+        if (demande.etape==='TIERS' && memorisation.length===1 && memorisation[0].memoriser && !bilan.refuses && !bilan.conflits && !bilan.aReprendre) {
+          this.ouvrirTiersAssistant(memorisation[0].id,memorisation[0].operation,true);
+        }
       },
       error: e => {
         this.loading.set(false); if (contexte !== this.cleAssistant()) return;
@@ -332,10 +382,28 @@ export class TresoreriePage implements OnInit {
     if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
   }
 
-  proposerMotifBancaire(libelle: string): string {
+  proposerMotifBancaire(libelle: string, nomTiers = ''): string {
+    const domaines=[...libelle.toUpperCase().matchAll(/\b(?:WWW\.)?([A-Z0-9][A-Z0-9-]*(?:\.[A-Z][A-Z0-9-]*)+)\b/g)]
+      .map(m=>m[1]).filter(d=>!['GMAIL.COM','OUTLOOK.COM','HOTMAIL.COM','YAHOO.COM'].includes(d));
+    if (new Set(domaines).size===1) return domaines[0];
+    const nettoyer=(texte:string)=>texte.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+    const termes=nettoyer(nomTiers).split(/ +/).filter(t=>t.length>=4 && !['FRANCE','IRELAND','SYSTEMS','SOFTWARE','SERVICES','COMPANY','UNLIMITED','BANQUE','CREDIT'].includes(t));
+    const banque=' '+nettoyer(libelle)+' ';
+    const reconnu=termes.find(t=>banque.includes(' '+t+' '));
+    if (reconnu) return reconnu;
     return libelle.normalize('NFKC').replace(/\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b/g,' ')
       .replace(/\b[A-Z]{0,3}\d{4,}[A-Z0-9]*\b/gi,' ').replace(/[£€$]/g,' ').replace(/\b(PAIEMENT|CARTE|CB|VIREMENT|VIR|SEPA|PRLV|PRELEVEMENT|ACHAT)\b/gi,' ')
-      .replace(/\s+/g,' ').trim().slice(0,200) || libelle.trim().slice(0,200);
+      .replace(/\s+/g,' ').trim().toUpperCase().slice(0,200);
+  }
+  motifBancaireValide(motif: string): boolean {
+    const normalise=motif.trim().toUpperCase();
+    return normalise.length>=3 && normalise.length<=200 && /\p{L}/u.test(normalise)
+      && !/\b\d{1,2}[/-]\d{1,2}\b|\b[A-Z]{0,3}\d{4,}\b/i.test(normalise)
+      && !['VIR','VIREMENT','VIREMENT SEPA','SEPA','PAIEMENT','PAIEMENT CB','CARTE','SALAIRE','FRAIS','COMMISSION','REMBOURSEMENT'].includes(normalise);
+  }
+  modifierRegleProposee(id: number, champ: 'motif'|'memoriser', valeur: string|boolean): void {
+    if(this.loading()) return;
+    this.reglesProposeesAssistant.update(r=>({...r,[id]:{...r[id],[champ]:valeur}}));
   }
   ouvrirTiersAssistant(id?: number, origine?: number, proposerRegle = false): void {
     const operationId = origine ?? this.detailAssistant()?.operation.id ?? this.operationAssistant();
@@ -343,7 +411,8 @@ export class TresoreriePage implements OnInit {
     const op=(detail?.id===operationId ? detail : null) ?? this.choixAssistant().find(s=>s.choix.operationId===operationId)?.ligne.operation
       ?? this.apercuAssistant()?.lignes.find(l=>l.operation.id===operationId)?.operation;
     const libelle=op?.libelle ?? this.tiersConfirmesAssistant().find(t=>t.operation===operationId)?.libelle;
-    const motif=proposerRegle && libelle ? this.proposerMotifBancaire(libelle) : '';
+    const propose=this.tiersConfirmesAssistant().find(t=>t.operation===operationId)?.motif;
+    const motif=proposerRegle ? (propose || (libelle ? this.proposerMotifBancaire(libelle) : '')) : '';
     const retour = `retourAssistant=1${operationId ? `&operationId=${operationId}` : ''}${motif && id ? `&proposerRegle=1&motifBancaire=${encodeURIComponent(motif)}` : ''}`;
     this.shellBridge.navigate('tiers', id ? `/tiers/${id}?${retour}` : `/tiers/nouveau?${retour}`, id ? 'Fiche et règles bancaires' : 'Créer un tiers après recherche des doublons');
   }
@@ -412,7 +481,7 @@ export class TresoreriePage implements OnInit {
     const tri=this.triOperations();
     const cle=(tri.sortBy==='compte' ? 'compteBancaireLibelle' : tri.sortBy) as keyof OperationBancaire;
     const operations=apercu.lignes.map(l=>l.operation).sort((a,b)=>{
-      const gauche=a[cle] ?? '';const droite=b[cle] ?? '';
+      const gauche=tri.sortBy==='montant' ? this.montantSigne(a) : a[cle] ?? '';const droite=tri.sortBy==='montant' ? this.montantSigne(b) : b[cle] ?? '';
       const ordre=typeof gauche==='number' && typeof droite==='number' ? gauche-droite : String(gauche).localeCompare(String(droite),'fr',{numeric:true});
       return tri.sortDirection==='DESC' ? -ordre : ordre;
     });
@@ -1291,7 +1360,7 @@ export class TresoreriePage implements OnInit {
   }
 
   voirOperation(operation: OperationBancaire): void {
-    alert(`${operation.dateOperation} - ${operation.libelle}\nDate valeur : ${operation.dateValeur || '-'}\nRéférence : ${operation.referenceBancaire || '-'}\nMontant : ${this.montant(operation.montant)}\nNature : ${this.libelleNature(operation.natureOperation)}\nStatut : ${operation.statutRapprochement}`);
+    this.detailAssistant.set(null);this.recapAssistant.set(null);this.menuOperation.set(null);this.operationConsultee.set(operation);
   }
 
   nouvelleOperation(): void {

@@ -435,165 +435,110 @@
             </div>
           </form>
         }
-        <section class="assistant" aria-label="Rapprochement bancaire">
-            <p>Filtres actifs : {{ resumeFiltresAssistant() }}.</p>
-            <p>Les compteurs financiers en haut de l’écran portent sur toute la société ; les compteurs de l’étape portent sur le périmètre ci-dessous.</p>
-
-            <div class="actions">
-              @if (operationAssistant(); as id) {
-                <strong>Périmètre : opération {{ id }}, dans les filtres actifs.</strong>
-                <button type="button" [disabled]="loading()" (click)="operationAssistant.set(null); invaliderAssistant()">Revenir au périmètre filtré</button>
-              } @else {
-                <label>Périmètre
-                  <select [value]="porteeAssistant()" [disabled]="loading()" (change)="porteeAssistant.set($any($event.target).value); invaliderAssistant()">
-                    <option value="FILTRES">Toutes les opérations filtrées</option><option value="PAGE">Page bancaire courante</option>
-                  </select>
-                </label>
-              }
-              <span>Les filtres affichés s’appliquent ; aucun traitement hors de ce périmètre.</span>
-              @if (etapeAssistant() === 'NOTES_FRAIS') {
-                <label>Pièces comptables
-                  <select [value]="categorieAssistant()" [disabled]="loading()" (change)="categorieAssistant.set($any($event.target).value); invaliderAssistant()">
-                    <option value="CARTE">Carte entreprise</option><option value="REMBOURSEMENT">Frais à rembourser</option>
-                  </select>
-                </label>
-              }
-              <button type="button" class="primary" [disabled]="loading()" (click)="previsualiserAssistant()">Prévisualiser</button>
-              @if (apercuAssistant()) { <button type="button" [disabled]="loading()" (click)="revenirOperationsFiltrees()">Revenir aux opérations filtrées</button> }
-            </div>
-            @if (bilanAssistant(); as bilan) {
-              <section aria-label="Bilan de l’assistant" aria-live="polite">
-                @for (tiers of tiersConfirmesAssistant(); track tiers.operation) {
-                  <button type="button" (click)="ouvrirTiersAssistant(tiers.id,tiers.operation,true)">Mémoriser une règle bancaire pour {{ tiers.nom }} dans sa fiche Tiers (facultatif)</button>
-                }
-                <h4>Bilan</h4><p>{{ bilan.reussis }} réussi(s), {{ bilan.refuses }} refusé(s), {{ bilan.conflits }} conflit(s), {{ bilan.aReprendre }} à reprendre.</p>
-                <ul>@for (r of bilan.lignes; track $index) {
-                  <li>Opération {{ r.operationId }} : {{ r.statut }} — {{ r.message }} @if (r.rapprochementId) { · Trace {{ r.rapprochementId }} }</li>
-                }</ul>
-              </section>
-            }
-            @if (repriseAssistant()) {
-              <p>Un résultat reste incertain. La reprise conserve les mêmes références pour empêcher un double enregistrement.</p>
-              <button type="button" [disabled]="loading()" (click)="preparerRepriseAssistant()">Reprendre les lignes non confirmées</button>
-            }
-            @if (recapAssistant(); as recap) {
-              <section aria-label="Récapitulatif de confirmation" class="assistant-recap">
-                <h4>{{ recap.etape === 'PIECES' ? 'Lancer le traitement automatique des pièces autorisées' : 'Confirmer les propositions sélectionnées' }}</h4>
-                <p>{{ recap.selections.length }} ligne(s) · Total des affectations : {{ montant(totalAssistant()) }}.</p>
-                @if (recap.etape === 'PIECES') {
-                  <p>Les pièces ci-dessous seront créées et validées. Les factures générées seront marquées payées.
-                    Les valeurs HT = TTC, TVA zéro et, pour Factures, EUR / virement sont des conventions vérifiées, pas des informations extraites d’un justificatif.
-                    Il n’existe pas d’annulation coordonnée automatique. Aucun paiement bancaire externe n’est déclenché.</p>
-                }
-                <ul>@for (c of recap.selections; track c.operationId + ':' + c.candidatCle) {
-                  <li>Opération {{ c.operationId }} · {{ libelleChoixAssistant(c) }} · Tiers {{ c.tiersId }} · {{ montant(c.montant) }}
-                    @if (c.confirmerNature) { <strong>Correction de nature explicitement demandée.</strong> }
-                  </li>
-                }</ul>
-                <button type="button" class="primary" [disabled]="loading()" (click)="confirmerAssistant()">{{ recap.etape === 'PIECES' ? 'Confirmer le lancement du lot' : 'Confirmer' }}</button>
-                <button type="button" [disabled]="loading()" (click)="recapAssistant.set(null)">Annuler</button>
-              </section>
-            }
-            @if (apercuAssistant(); as apercu) {
-              <div class="metrics" aria-label="Compteurs de l’étape">
-                <article><span>Opérations éligibles</span><strong>{{ apercu.eligibles }}</strong></article>
-                <article><span>Pièces disponibles</span><strong>{{ etapeAssistant() === 'TIERS' ? 'Sans objet' : apercu.piecesDisponibles }}</strong></article>
-                <article><span>Propositions</span><strong>{{ apercu.propositions }}</strong></article>
-                <article><span>Anomalies</span><strong>{{ apercu.anomalies }}</strong></article>
-                <article><span>{{ etapeAssistant() === 'TIERS' ? 'Tiers identifiés' : 'Déjà traitées dans cette étape' }}</span><strong>{{ apercu.traitees }}</strong></article>
-                <article><span>Opérations restantes</span><strong>{{ apercu.restantes }}</strong></article>
-              </div>
-              <p>Périmètre analysé : {{ apercu.operationsPerimetre }} opération(s). Les anomalies et les propositions peuvent concerner une même opération.</p>
-              @if (etapeAssistant() === 'PIECES') {
-                <p>{{ apercu.eligibles }} opération(s) autorisée(s), total {{ montant(apercu.montantEligible) }}.
-                  Les types de pièces et exclusions sont détaillés ci-dessous. L’autorisation reste administrée dans Tiers.</p>
-                <button type="button" class="primary" [disabled]="loading() || !apercu.eligibles" (click)="preparerAssistant(true)">Traiter automatiquement les pièces autorisées</button>
-              } @else {
-                <div class="actions">
-                  <button type="button" [disabled]="loading()" (click)="selectionnerSuresAssistant()">Sélectionner les propositions sûres</button>
-                  <button type="button" [disabled]="loading()" (click)="choixAssistant.set([]); recapAssistant.set(null)">Tout désélectionner</button>
-                  <span>{{ choixAssistant().length }} ligne(s) sélectionnée(s)</span>
-                  <button type="button" class="primary" [disabled]="loading() || !choixAssistant().length" (click)="preparerAssistant()">Vérifier et confirmer la sélection</button>
-                </div>
+        <div class="bank-toolbar">
+          @if (operationAssistant(); as id) {
+            <span>Opération {{ id }}</span><button type="button" [disabled]="loading()" (click)="revenirPerimetreFiltre()">Toutes les opérations filtrées</button>
+          } @else {
+            <label>Analyser <select [value]="porteeAssistant()" [disabled]="loading()" (change)="porteeAssistant.set($any($event.target).value); invaliderAssistant(); previsualiserAssistant()">
+              <option value="FILTRES">Toutes les opérations filtrées</option><option value="PAGE">Page bancaire courante</option>
+            </select></label>
+          }
+          @if (etapeAssistant() === 'NOTES_FRAIS') {
+            <label>Pièces <select [value]="categorieAssistant()" [disabled]="loading()" (change)="categorieAssistant.set($any($event.target).value); invaliderAssistant(); previsualiserAssistant()">
+              <option value="CARTE">Carte entreprise</option><option value="REMBOURSEMENT">Remboursements de bénéficiaires</option>
+            </select></label>
+          }
+          <button type="button" [disabled]="loading()" (click)="previsualiserAssistant()">Actualiser les propositions</button>
+          @if (apercuAssistant(); as apercu) {
+            <span aria-live="polite">{{ apercu.lignes.length }} opération(s) · {{ apercu.propositions }} proposition(s) · {{ apercu.anomalies }} anomalie(s)</span>
+            @if (etapeAssistant() === 'PIECES') {
+              <button type="button" class="primary" [disabled]="loading() || !apercu.eligibles" (click)="preparerAssistant(true)">Traiter les pièces autorisées ({{ apercu.eligibles }})</button>
+            } @else {
+              <button type="button" [disabled]="loading() || !apercu.eligibles" (click)="selectionnerSuresAssistant()">Sélectionner les propositions sûres</button>
+              @if (choixAssistant().length) {
+                <button type="button" class="primary" [disabled]="loading()" (click)="preparerAssistant()">Vérifier la sélection ({{ choixAssistant().length }})</button>
+                <button type="button" [disabled]="loading()" (click)="choixAssistant.set([]); recapAssistant.set(null)">Désélectionner</button>
               }
             }
+          }
+        </div>
+        @if (bilanAssistant(); as bilan) {
+          <details class="bank-result" open><summary>{{ bilan.reussis }} réussi(s), {{ bilan.refuses }} refusé(s), {{ bilan.conflits }} conflit(s), {{ bilan.aReprendre }} à reprendre</summary>
+            <ul>@for (r of bilan.lignes; track $index) { <li>Opération {{ r.operationId }} : {{ r.statut }} — {{ r.message }}</li> }</ul>
+            @for (tiers of tiersConfirmesAssistant(); track tiers.operation) {
+              @if (tiers.memoriser) { <button type="button" (click)="ouvrirTiersAssistant(tiers.id,tiers.operation,true)">Mémoriser {{ tiers.motif }} dans la fiche {{ tiers.nom }}</button> }
+            }
+          </details>
+        }
+        @if (repriseAssistant()) { <button type="button" [disabled]="loading()" (click)="preparerRepriseAssistant()">Reprendre les lignes non confirmées</button> }
         <div class="table-scroll-container">
-          <table class="operations-table">
-            <thead>
-              <tr>
-                <th class="date-column nowrap sticky-date"><button type="button" class="sort-button" (click)="trierOperations('dateOperation')">Date opération <span>{{ indicateurTriOperations('dateOperation') }}</span></button></th>
-                <th class="libelle-column sticky-libelle"><button type="button" class="sort-button" (click)="trierOperations('libelle')">Libellé <span>{{ indicateurTriOperations('libelle') }}</span></button></th>
-                <th class="compte-column"><button type="button" class="sort-button" (click)="trierOperations('compte')">Compte <span>{{ indicateurTriOperations('compte') }}</span></button></th>
-                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('debit')">Débit <span>{{ indicateurTriOperations('debit') }}</span></button></th>
-                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('credit')">Crédit <span>{{ indicateurTriOperations('credit') }}</span></button></th>
-                <th class="amount-column right nowrap"><button type="button" class="sort-button right" (click)="trierOperations('montant')">Montant <span>{{ indicateurTriOperations('montant') }}</span></button></th>
-                <th class="sens-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('sens')">Sens <span>{{ indicateurTriOperations('sens') }}</span></button></th>
-                <th class="type-operation-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('typeOperation')">Type opération <span>{{ indicateurTriOperations('typeOperation') }}</span></button></th>
-                <th class="tiers-column"><button type="button" class="sort-button" (click)="trierOperations('tiersReconnu')">Tiers reconnu <span>{{ indicateurTriOperations('tiersReconnu') }}</span></button></th>
-                <th class="type-tiers-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('typeTiersReconnu')">Type tiers <span>{{ indicateurTriOperations('typeTiersReconnu') }}</span></button></th>
-                <th class="nature-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('natureOperation')">Nature opération <span>{{ indicateurTriOperations('natureOperation') }}</span></button></th>
-                <th class="status-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('statutClassification')">Statut classification <span>{{ indicateurTriOperations('statutClassification') }}</span></button></th>
-                <th class="status-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('statutRapprochement')">Statut rapprochement <span>{{ indicateurTriOperations('statutRapprochement') }}</span></button></th>
-                <th class="rapprochement-column nowrap"><button type="button" class="sort-button" (click)="trierOperations('libelleRapprochement')">Libellé rapprochement <span>{{ indicateurTriOperations('libelleRapprochement') }}</span></button></th>
-                @if (apercuAssistant()) { <th>Propositions et anomalies</th> }
-                <th class="actions-column">Actions</th>
-              </tr>
-            </thead>
+          <table class="operations-table" aria-label="Opérations bancaires">
+            <thead><tr>
+              <th><button type="button" class="sort-button" (click)="trierOperations('dateOperation')">Date opération <span>{{ indicateurTriOperations('dateOperation') }}</span></button></th>
+              <th><button type="button" class="sort-button" (click)="trierOperations('libelle')">Libellé <span>{{ indicateurTriOperations('libelle') }}</span></button></th>
+              <th><button type="button" class="sort-button" (click)="trierOperations('compte')">Compte <span>{{ indicateurTriOperations('compte') }}</span></button></th>
+              <th class="right"><button type="button" class="sort-button" (click)="trierOperations('montant')">Montant signé <span>{{ indicateurTriOperations('montant') }}</span></button></th>
+              <th><button type="button" class="sort-button" (click)="trierOperations('tiersReconnu')">Tiers <span>{{ indicateurTriOperations('tiersReconnu') }}</span></button></th>
+              <th><button type="button" class="sort-button" (click)="trierOperations('statutRapprochement')">Statut rapprochement <span>{{ indicateurTriOperations('statutRapprochement') }}</span></button></th>
+              <th>Proposition / Actions</th>
+            </tr></thead>
             <tbody>
               @for (operation of operationsAffichees(); track operation.id) {
                 <tr>
-                  <td class="nowrap sticky-date">{{ operation.dateOperation }}</td>
-                  <td class="libelle-column sticky-libelle">{{ operation.libelle }}</td>
-                  <td>{{ operation.compteBancaireLibelle }}</td>
-                  <td class="right nowrap">{{ montant(operation.debit) }}</td>
-                  <td class="right nowrap">{{ montant(operation.credit) }}</td>
-                  <td class="right nowrap">{{ montant(operation.montant) }}</td>
-                  <td class="nowrap">{{ operation.sens }}</td>
-                  <td class="nowrap">{{ operation.typeOperation }}</td>
-                  <td>@if (operation.tiersId) { <button type="button" class="link-button" (click)="ouvrirTiers(operation.tiersId, operation.tiersReconnu)">{{ operation.tiersReconnu || ('Tiers ' + operation.tiersId) }}</button> } @else { {{ operation.tiersReconnu || '-' }} }</td>
-                  <td class="nowrap">{{ operation.typeTiersReconnu || '-' }}</td>
-                  <td class="nowrap">
-                    <select class="inline-select" [value]="operation.natureOperation" (change)="modifierNatureOperation(operation, $any($event.target).value)">
-                      @for (nature of naturesOperation; track nature) {
-                        <option [value]="nature">{{ libelleNature(nature) }}</option>
+                  <td>{{ operation.dateOperation }}</td><td>{{ operation.libelle }}</td><td>{{ operation.compteBancaireLibelle }}</td>
+                  <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
+                  <td>{{ operation.tiersReconnu || 'Non identifié' }}</td><td>{{ operation.statutRapprochement }}</td>
+                  <td class="bank-proposition">
+                    @if (ligneAssistant(operation.id); as ligne) {
+                      @if (propositionSure(ligne); as candidat) {
+                        <label><input type="checkbox" [checked]="estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /> {{ candidat.numeroPiece || candidat.nomTiers }}</label>
+                      } @else {
+                        @for (c of ligne.candidats.slice(0,2); track c.cle) { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
+                        @if (ligne.candidats.length === 1 && !ligne.candidats[0].sur) { <strong>À vérifier avant confirmation</strong> }
+                        @if (ligne.candidats.length > 1) { <strong>Plusieurs correspondances : choix requis</strong> }
+                        @if (!ligne.candidats.length && !operation.rapprochee) { <span>Aucune correspondance</span> }
                       }
-                    </select>
-                  </td>
-                  <td class="nowrap">
-                    <span class="badge" [class.warning]="operation.statutClassification === 'A_VERIFIER'" [class.muted]="operation.statutClassification === 'NON_CLASSEE'">
-                      {{ libelleStatutClassification(operation.statutClassification) }}
-                    </span>
-                  </td>
-                  <td class="nowrap"><span class="badge muted">{{ operation.statutRapprochement }}</span></td>
-                  <td>{{ operation.libelleRapprochement || '-' }}</td>
-                  @if (apercuAssistant()) {
-                    <td>@if (ligneAssistant(operation.id); as ligne) {
-                      <strong>{{ ligne.candidats.length }} proposition(s)</strong>
-                      @for (c of ligne.candidats; track c.cle) { <div>{{ c.numeroPiece || c.nomTiers }} · {{ c.typePiece }}</div> }
-                      @for (a of ligne.anomalies; track a) { <div class="warning">{{ a }}</div> }
-                      <button type="button" (click)="detailAssistant.set(ligne); tiersManuelsAssistant.set([])">Examiner</button>
-                    }</td>
-                  }
-                  <td class="actions-column">
-                    <div class="actions">
-                      <button type="button" (click)="voirOperation(operation)">Voir</button>
-                      <button type="button" (click)="modifierOperation(operation)">Modifier</button>
-                      <button type="button" (click)="ouvrirAssistant(operation)">Prévisualiser le recalcul</button>
-                      @if (operation.statutRapprochement !== 'RAPPROCHEE') {
-                        <button type="button" (click)="ouvrirAssistant(operation)">Rapprocher</button>
-                      }
-                      <button type="button" class="danger" (click)="supprimerOperation(operation)">Supprimer</button>
-                    </div>
+                      @for (anomalie of ligne.anomalies.slice(0,2); track anomalie) { <div class="warning">{{ anomalie }}</div> }
+                    }
+                    <button type="button" [disabled]="loading()" aria-haspopup="menu" [attr.aria-expanded]="menuOperation() === operation.id" [attr.aria-controls]="'actions-' + operation.id" (click)="basculerActions(operation.id)">Actions</button>
+                    @if (menuOperation() === operation.id) {
+                      <div class="bank-row-menu" role="menu" [id]="'actions-' + operation.id" (keydown.escape)="menuOperation.set(null)">
+                        <button type="button" role="menuitem" (click)="voirOperation(operation); menuOperation.set(null)">Voir</button>
+                        @if (operationModifiable(operation)) {
+                          <button type="button" role="menuitem" (click)="modifierOperation(operation); menuOperation.set(null)">Modifier</button>
+                          <button type="button" role="menuitem" (click)="identifierTiersOperation(operation)">{{ operation.tiersId ? 'Corriger le tiers' : 'Identifier le tiers' }}</button>
+                        }
+                        @if (operationDisponible(operation)) {
+                          @if (ligneAssistant(operation.id); as ligne) {
+                            @if (ligne.candidats.length || etapeAssistant() === 'TIERS') {
+                              <button type="button" role="menuitem" (click)="examinerOperation(ligne)">Examiner une proposition</button>
+                            }
+                            @if (propositionSure(ligne); as candidat) {
+                              <button type="button" role="menuitem" (click)="preparerLigne(ligne,candidat)">{{ etapeAssistant() === 'TIERS' ? 'Confirmer le tiers' : 'Confirmer un rapprochement' }}</button>
+                            }
+                            @if (etapeAssistant() === 'TIERS' && !ligne.candidats.length && !ligne.bloquee) {
+                              <button type="button" role="menuitem" (click)="creerTiersPourOperation(ligne)">Créer un tiers</button>
+                            }
+                          } @else {
+                            <button type="button" role="menuitem" (click)="examinerSansApercu(operation)">Rechercher des propositions</button>
+                          }
+                        }
+                        @if (operationModifiable(operation) && operation.statutRapprochement === 'NON_RAPPROCHEE') {
+                          <button type="button" role="menuitem" (click)="supprimerOperation(operation); menuOperation.set(null)">Supprimer</button>
+                        }
+                      </div>
+                    }
                   </td>
                 </tr>
-              } @empty {
-                <tr><td [attr.colspan]="apercuAssistant() ? 16 : 15" class="empty">Aucune opération bancaire.</td></tr>
-              }
+              } @empty { <tr><td colspan="7">Aucune opération disponible pour cette étape et ces filtres.</td></tr> }
             </tbody>
           </table>
         </div>
         @if (apercuAssistant(); as apercu) {
           <div class="table-pagination" aria-label="Pagination des résultats de l’étape">
+            <label>Lignes par page <select [value]="taillePageOperations()" (change)="changerTailleResultats($any($event.target).value)">
+              <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+            </select></label>
             <span>{{ apercu.lignes.length }} opération(s) dans cette étape et ce périmètre</span>
             <button type="button" [disabled]="pageResultatsAssistant() <= 1" (click)="pageResultatsAssistant.update(precedentePage)">Précédent</button>
             <span>Page {{ pageResultatsAssistant() }} / {{ totalPagesResultatsAssistant() }}</span>
@@ -624,8 +569,10 @@
         </div>
         }
                 @if (detailAssistant(); as ligne) {
-                  <aside aria-label="Détail de la proposition" class="assistant-detail">
+                  <div class="modal-backdrop" (keydown.escape)="detailAssistant.set(null)">
+                  <section role="dialog" aria-modal="true" aria-label="Détail de la proposition" class="manual-match-modal operation-detail-dialog">
                     <h4>Opération {{ ligne.operation.id }}</h4>
+                    @if (error()) { <p role="alert">{{ error() }}</p> }
                     <p>{{ ligne.operation.libelle }}<br>Date bancaire : {{ ligne.operation.dateOperation }}<br>Nature actuelle : {{ libelleNature(ligne.operation.natureOperation) }}<br>Tiers : {{ ligne.operation.tiersReconnu || 'Absent' }}</p>
                     @for (a of ligne.anomalies; track a) { <p class="warning">{{ a }}</p> }
                     @for (c of ligne.candidats; track c.cle) {
@@ -667,15 +614,54 @@
                       <button type="button" (click)="ouvrirTiersAssistant()">Créer un tiers dans le formulaire existant</button>
                     }
                     <button type="button" (click)="detailAssistant.set(null)">Fermer le détail</button>
-                  </aside>
+                    @if (choixAssistant().length) { <button type="button" class="primary" [disabled]="loading()" (click)="preparerAssistant()">Vérifier la sélection</button> }
+                  </section></div>
                 }
-            @if (!apercuAssistant() && !loading()) { <p>Les opérations filtrées sont affichées. Prévisualisez l’étape pour afficher ses opérations éligibles et ses propositions, sans écriture.</p> }
-            <div class="actions">
-              <button type="button" [disabled]="loading() || etapeAssistant() === 'TIERS'" (click)="naviguerAssistant(-1)">Précédent</button>
-              <button type="button" [disabled]="loading() || etapeAssistant() === 'PIECES'" (click)="naviguerAssistant(1)">Suivant</button>
-            </div>
-
-        </section>
+            @if (recapAssistant(); as recap) {
+              <div class="modal-backdrop" (keydown.escape)="recapAssistant.set(null)"><section role="dialog" aria-modal="true" aria-label="Récapitulatif de confirmation" class="manual-match-modal">
+                <h4>{{ recap.etape === 'PIECES' ? 'Lancer le traitement automatique des pièces autorisées' : 'Confirmer les propositions sélectionnées' }}</h4>
+                @if (error()) { <p role="alert">{{ error() }}</p> }
+                <p>{{ recap.selections.length }} ligne(s) · Total des affectations : {{ montant(totalAssistant()) }}.</p>
+                @if (recap.etape === 'PIECES') {
+                  <p>Les pièces ci-dessous seront créées et validées. Les factures générées seront marquées payées.
+                    Les valeurs HT = TTC, TVA zéro et, pour Factures, EUR / virement sont des conventions vérifiées, pas des informations extraites d’un justificatif.
+                    Il n’existe pas d’annulation coordonnée automatique. Aucun paiement bancaire externe n’est déclenché.</p>
+                }
+                <ul>@for (c of recap.selections; track c.operationId + ':' + c.candidatCle) {
+                  <li>Opération {{ c.operationId }} · {{ libelleChoixAssistant(c) }} · Tiers {{ c.tiersId }} · {{ montant(c.montant) }}
+                    @if (c.confirmerNature) { <strong>Correction de nature explicitement demandée.</strong> }
+                  </li>
+                }</ul>
+                @if (recap.etape === 'TIERS') {
+                  @for (selection of choixAssistant(); track selection.choix.operationId) {
+                    @if (reglesProposeesAssistant()[selection.choix.operationId]; as regle) {
+                      <fieldset><legend>Règle bancaire pour {{ selection.candidat.nomTiers }}</legend>
+                        <label><input type="checkbox" [checked]="regle.memoriser" (change)="modifierRegleProposee(selection.choix.operationId,'memoriser',$any($event.target).checked)" /> Mémoriser une règle dans la fiche Tiers après l’association</label>
+                        @if (regle.memoriser) {
+                          <label>Motif CONTIENT <input [value]="regle.motif" maxlength="200" (input)="modifierRegleProposee(selection.choix.operationId,'motif',$any($event.target).value)" /></label>
+                          <p>La fiche Tiers s’ouvrira pour vérifier les règles existantes et confirmer la mémorisation.</p>
+                        }
+                      </fieldset>
+                    }
+                  }
+                }
+                <button type="button" class="primary" [disabled]="loading()" (click)="confirmerAssistant()">{{ recap.etape === 'PIECES' ? 'Confirmer le lancement du lot' : 'Confirmer' }}</button>
+                <button type="button" [disabled]="loading()" (click)="recapAssistant.set(null)">Annuler</button>
+              </section></div>
+            }
+        @if (operationConsultee(); as operation) {
+          <div class="modal-backdrop" (keydown.escape)="operationConsultee.set(null)"><section role="dialog" aria-modal="true" aria-label="Détail de l’opération" class="manual-match-modal">
+            <h3>{{ operation.libelle }}</h3>
+            <dl><dt>Date opération / valeur</dt><dd>{{ operation.dateOperation }} / {{ operation.dateValeur || 'Absente' }}</dd>
+              <dt>Compte</dt><dd>{{ operation.compteBancaireLibelle }}</dd><dt>Débit / crédit</dt><dd>{{ montant(operation.debit) }} / {{ montant(operation.credit) }}</dd>
+              <dt>Montant signé</dt><dd>{{ montant(montantSigne(operation)) }}</dd><dt>Sens / type</dt><dd>{{ operation.sens }} / {{ operation.typeOperation }}</dd>
+              <dt>Tiers / type</dt><dd>{{ operation.tiersReconnu || 'Non identifié' }} / {{ operation.typeTiersReconnu || 'Absent' }}</dd>
+              <dt>Nature</dt><dd>{{ libelleNature(operation.natureOperation) }}</dd><dt>Classification</dt><dd>{{ libelleStatutClassification(operation.statutClassification) }}</dd>
+              <dt>Statut rapprochement</dt><dd>{{ operation.statutRapprochement }}</dd><dt>Référence bancaire</dt><dd>{{ operation.referenceBancaire || 'Absente' }}</dd>
+              <dt>Pièce / rapprochement</dt><dd>{{ operation.documentAssocieNumero || 'Absente' }} / {{ operation.libelleRapprochement || 'Absent' }}</dd></dl>
+            <button type="button" (click)="operationConsultee.set(null)">Fermer</button>
+          </section></div>
+        }
       }
       @case ('pieces-rapprochement') {
         <div class="rapprochement-tools"><h3>Pièces de rapprochement non commerciales</h3></div>

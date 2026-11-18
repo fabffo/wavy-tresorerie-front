@@ -143,8 +143,8 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(html.querySelector('[aria-label="Récapitulatif de confirmation"]')?.textContent).toContain('2026-01-09');expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
   it('transmet un motif proposé vers la fiche Tiers sans créer de règle ni associer le tiers', () => {
-    analyser('TIERS');page.detailAssistant.set({...ligne,operation:{...operation,id:2,libelle:'MICROSOFT'}});page.ouvrirTiersAssistant(21,1,true);
-    expect(navigate).toHaveBeenCalledWith('tiers','/tiers/21?retourAssistant=1&operationId=1&proposerRegle=1&motifBancaire=Adobe.com',expect.any(String));
+    page.operationAssistant.set(1);analyser('TIERS');page.detailAssistant.set({...ligne,operation:{...operation,id:2,libelle:'MICROSOFT'}});page.ouvrirTiersAssistant(21,1,true);
+    expect(navigate).toHaveBeenCalledWith('tiers','/tiers/21?retourAssistant=1&operationId=1&proposerRegle=1&motifBancaire=ADOBE.COM',expect.any(String));
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
     expect(page.proposerMotifBancaire('VIR SEPA MEROVE 18/11/2026 123456')).toBe('MEROVE');
     expect(page.proposerMotifBancaire('PAIEMENT MICROSOFT£G134725849 10/01')).toBe('MICROSOFT');
@@ -189,6 +189,48 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     api['operations']=vi.fn().mockReturnValueOnce(of({content:[],totalElements:1,totalPages:1})).mockReturnValueOnce(of({content:[operation],totalElements:1,totalPages:1}));
     const fin=vi.fn();chargerPage.call(page,fin,true);
     expect(page.pageOperations()).toBe(1);expect(api['operations']).toHaveBeenCalledTimes(2);expect(fin).toHaveBeenCalledTimes(1);expect(page.bilanAssistant()).toEqual(bilan);
+  });
+
+  it('limite le tableau à sept colonnes et un bouton Actions, puis ouvre seulement les actions possibles', () => {
+    const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
+    page.onglet.set('operations');page.operations.set([operation]);fixture.detectChanges();
+    const html:HTMLElement=fixture.nativeElement;
+    expect(html.querySelectorAll('table')).toHaveLength(1);
+    expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
+      'Date opération','Libellé','Compte','Montant signé','Tiers','Statut rapprochement','Proposition / Actions']);
+    expect(html.querySelector('[role="dialog"]')).toBeNull();
+    const cellule=html.querySelector('tbody tr td:last-child')!;
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Actions']);
+    page.operations.set([{...operation,rapprochee:true,statutRapprochement:'RAPPROCHEE'}]);page.basculerActions(1);fixture.detectChanges();
+    expect(Array.from(html.querySelectorAll('[role="menuitem"]')).map(b=>b.textContent?.trim())).toEqual(['Voir']);
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+  it('examine par défaut les tiers inconnus et conserve une correction explicitement ciblée', () => {
+    const inconnue={...ligne,operation:{...operation,id:2,tiersId:null,tiersReconnu:null}} as LigneAssistant;
+    analyser('TIERS',[ligne,inconnue]);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([2]);
+    page.identifierTiersOperation(operation);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([1]);
+    expect(page.detailAssistant()?.operation.id).toBe(1);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+  it('propose ADOBE.COM par défaut, permet sa correction ou son refus sans enregistrer de règle', () => {
+    const c={...candidat,cle:'MANUEL:21',typePiece:'TIERS',pieceId:null,sur:false,montantPropose:0};
+    const l={...ligne,operation:{...operation,tiersId:null,libelle:'Adobe.com Saggart'},candidats:[c]} as LigneAssistant;
+    analyser('TIERS',[l]);selectionner(l,c);
+    expect(page.reglesProposeesAssistant()[1]).toMatchObject({memoriser:true,motif:'ADOBE.COM'});
+    page.modifierRegleProposee(1,'motif','ADOBE');page.modifierRegleProposee(1,'memoriser',false);
+    expect(page.reglesProposeesAssistant()[1]).toMatchObject({memoriser:false,motif:'ADOBE'});
+    expect(page.motifBancaireValide('PAIEMENT CB')).toBe(false);
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();expect(navigate).not.toHaveBeenCalled();
+  });
+  it('affiche un montant signé cohérent pour les débits et crédits', () => {
+    expect(page.montantSigne(operation)).toBe(-100);
+    expect(page.montantSigne({...operation,sens:'CREDIT',debit:0,credit:45,montant:45})).toBe(45);
+    expect(page.propositionSure({...ligne,bloquee:true})).toBeNull();
+    expect(page.propositionSure({...ligne,operation:{...operation,rapprochee:true}})).toBeNull();
+  });
+
+  it('ne sélectionne pas en lot une ligne ambiguë même si un seul candidat est dit sûr', () => {
+    analyser('FOURNISSEURS',[{...ligne,candidats:[candidat,{...candidat,cle:'P:ACHAT:11',pieceId:11,sur:false}]}]);
+    page.selectionnerSuresAssistant();expect(page.choixAssistant()).toHaveLength(0);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
 
 });
