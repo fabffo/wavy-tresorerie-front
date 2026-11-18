@@ -246,7 +246,7 @@ export class TresoreriePage implements OnInit {
     this.operationAssistant.set(op.id);this.etapeAssistant.set('TIERS');this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant();
   }
   examinerSansApercu(op:OperationBancaire): void { this.operationAssistant.set(op.id);this.invaliderAssistant();this.detailAttenduAssistant=op.id;this.previsualiserAssistant(); }
-  creerTiersPourOperation(ligne:LigneAssistant): void { this.examinerOperation(ligne);this.ouvrirTiersAssistant(); }
+  creerTiersPourOperation(ligne:LigneAssistant): void { this.ouvrirValidationTiers(ligne); }
   revenirPerimetreFiltre(): void { this.operationAssistant.set(null);this.invaliderAssistant();this.previsualiserAssistant(); }
   changerTailleResultats(value:string): void { const size=Number(value);if([10,25,50,100].includes(size)){this.taillePageOperations.set(size);this.pageResultatsAssistant.set(1);} }
 
@@ -260,6 +260,11 @@ export class TresoreriePage implements OnInit {
     if (!selectionner) { this.choixAssistant.set(autres); this.recapAssistant.set(null); return; }
     if (candidat.pieceId && autres.some(s => s.choix.pieceId === candidat.pieceId && s.candidat.typePiece === candidat.typePiece && s.choix.operationId !== ligne.operation.id)) {
       this.error.set('Cette pièce est déjà sélectionnée sur une autre opération.'); return;
+    }
+    if(this.etapeAssistant()==='TIERS') {
+      const autresOperations:typeof autres=[];
+      this.choixAssistant.set(autresOperations);
+      autres.splice(0,autres.length,...autresOperations);
     }
     const uneOperation = ['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) || !candidat.sur;
     if (autres.some(s => (uneOperation || !s.candidat.sur) && s.choix.operationId !== ligne.operation.id)) {
@@ -299,6 +304,11 @@ export class TresoreriePage implements OnInit {
 
   preparerAssistant(automatique = false): void {
     if (this.loading() || this.contexteApercuAssistant !== this.cleAssistant()) return;
+    if(this.etapeAssistant()==='TIERS') {
+      const choix=this.choixAssistant();
+      if(choix.length!==1){this.error.set('Choisissez un seul tiers pour cette opération.');return;}
+      this.ouvrirValidationTiers(choix[0].ligne,choix[0].candidat.tiersId);return;
+    }
     if (automatique) this.selectionnerSuresAssistant();
     const selections = this.choixAssistant();
     if (!selections.length) { this.error.set('Sélectionnez une proposition.'); return; }
@@ -380,6 +390,15 @@ export class TresoreriePage implements OnInit {
     this.detailAssistant.set(enrichie);
     this.apercuAssistant.update(a => a ? { ...a, lignes: a.lignes.map(l => l.operation.id === ligne.operation.id ? enrichie : l) } : a);
     if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
+  }
+
+  ouvrirValidationTiers(ligne:LigneAssistant,tiersId?:number):void {
+    if(this.loading() || ligne.bloquee || !this.operationDisponible(ligne.operation))return;
+    const candidat=ligne.candidats.find(c=>c.tiersId===tiersId);
+    const motif=this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? '');
+    const params=new URLSearchParams({retourAssistant:'1',validationBancaire:'1',operationId:String(ligne.operation.id),motifBancaire:motif});
+    if(tiersId)params.set('tiersProposeId',String(tiersId));
+    this.shellBridge.navigate('tiers','/tiers/nouveau?'+params.toString(),'Identification du tiers et de sa règle');
   }
 
   proposerMotifBancaire(libelle: string, nomTiers = ''): string {
@@ -536,7 +555,7 @@ export class TresoreriePage implements OnInit {
       this.onglet.set(this.normaliserOnglet(params.get('vue')));
       if (params.get('assistant') === 'tiers') {
         this.etapeAssistant.set('TIERS');
-        const cree=Number(params.get('tiersProposeId'));
+        const cree=params.get('tiersValideId') ? 0 : Number(params.get('tiersProposeId'));
         this.tiersRetourAssistant=Number.isSafeInteger(cree) && cree>0 ? cree : null;
         const operation = Number(params.get('operationId'));
         if (Number.isSafeInteger(operation) && operation > 0) this.operationAssistant.set(operation);

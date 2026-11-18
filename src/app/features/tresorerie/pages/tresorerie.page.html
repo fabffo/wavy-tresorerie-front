@@ -451,7 +451,9 @@
           <button type="button" [disabled]="loading()" (click)="previsualiserAssistant()">Actualiser les propositions</button>
           @if (apercuAssistant(); as apercu) {
             <span aria-live="polite">{{ apercu.lignes.length }} opération(s) · {{ apercu.propositions }} proposition(s) · {{ apercu.anomalies }} anomalie(s)</span>
-            @if (etapeAssistant() === 'PIECES') {
+            @if (etapeAssistant() === 'TIERS') {
+              <span>Choisissez un tiers par opération ; les correspondances multiples restent à examiner.</span>
+            } @else if (etapeAssistant() === 'PIECES') {
               <button type="button" class="primary" [disabled]="loading() || !apercu.eligibles" (click)="preparerAssistant(true)">Traiter les pièces autorisées ({{ apercu.eligibles }})</button>
             } @else {
               <button type="button" [disabled]="loading() || !apercu.eligibles" (click)="selectionnerSuresAssistant()">Sélectionner les propositions sûres</button>
@@ -491,9 +493,13 @@
                   <td class="bank-proposition">
                     @if (ligneAssistant(operation.id); as ligne) {
                       @if (propositionSure(ligne); as candidat) {
-                        <label><input type="checkbox" [checked]="estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /> {{ candidat.numeroPiece || candidat.nomTiers }}</label>
+                        <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + operation.id" [checked]="estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /> {{ candidat.numeroPiece || candidat.nomTiers }}</label>
                       } @else {
-                        @for (c of ligne.candidats.slice(0,2); track c.cle) { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
+                        @for (c of (etapeAssistant() === 'TIERS' ? ligne.candidats : ligne.candidats.slice(0,2)); track c.cle) {
+                          @if(etapeAssistant() === 'TIERS') {
+                            <label><input type="radio" [name]="'tiers-' + operation.id" [disabled]="loading() || ligne.bloquee" [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,true)" /> {{ c.nomTiers }}</label>
+                          } @else { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
+                        }
                         @if (ligne.candidats.length === 1 && !ligne.candidats[0].sur) { <strong>À vérifier avant confirmation</strong> }
                         @if (ligne.candidats.length > 1) { <strong>Plusieurs correspondances : choix requis</strong> }
                         @if (!ligne.candidats.length && !operation.rapprochee) { <span>Aucune correspondance</span> }
@@ -513,8 +519,10 @@
                             @if (ligne.candidats.length || etapeAssistant() === 'TIERS') {
                               <button type="button" role="menuitem" (click)="examinerOperation(ligne)">Examiner une proposition</button>
                             }
-                            @if (propositionSure(ligne); as candidat) {
-                              <button type="button" role="menuitem" (click)="preparerLigne(ligne,candidat)">{{ etapeAssistant() === 'TIERS' ? 'Confirmer le tiers' : 'Confirmer un rapprochement' }}</button>
+                            @if(etapeAssistant() === 'TIERS' && choixAssistant().length === 1 && choixAssistant()[0].choix.operationId === operation.id) {
+                              <button type="button" role="menuitem" (click)="preparerAssistant()">Préparer le tiers et sa règle</button>
+                            } @else if (propositionSure(ligne); as candidat) {
+                              <button type="button" role="menuitem" (click)="preparerLigne(ligne,candidat)">{{ etapeAssistant() === 'TIERS' ? 'Préparer le tiers et sa règle' : 'Confirmer un rapprochement' }}</button>
                             }
                             @if (etapeAssistant() === 'TIERS' && !ligne.candidats.length && !ligne.bloquee) {
                               <button type="button" role="menuitem" (click)="creerTiersPourOperation(ligne)">Créer un tiers</button>
@@ -577,7 +585,7 @@
                     @for (a of ligne.anomalies; track a) { <p class="warning">{{ a }}</p> }
                     @for (c of ligne.candidats; track c.cle) {
                       <section class="assistant-candidat">
-                        <label><input type="checkbox" [disabled]="loading() || ligne.bloquee || c.carte?.conflit"
+                        <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + ligne.operation.id" [disabled]="loading() || ligne.bloquee || c.carte?.conflit"
                           [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,$any($event.target).checked)" />
                           {{ c.numeroPiece || c.nomTiers }} — {{ c.typePiece }}</label>
                         <p>Tiers proposé : {{ c.nomTiers }} · Tiers {{ c.tiersId }}<br>
@@ -591,7 +599,7 @@
                             <label>Montant à affecter <input type="number" min="0.01" step="0.01" [max]="c.montantPropose" [value]="choix.montant"
                               (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'montant',+$any($event.target).value)" /></label>
                           }
-                          @if (c.natureProposee) {
+                          @if (c.natureProposee && etapeAssistant() !== 'TIERS') {
                             <label><input type="checkbox" [checked]="choix.confirmerNature" (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'confirmerNature',$any($event.target).checked)" />
                               Corriger explicitement la nature vers {{ libelleNature(c.natureProposee) }}. Sinon elle reste inchangée.</label>
                           }
@@ -611,10 +619,10 @@
                         <button type="button" (click)="ouvrirTiersAssistant(tiers.id)">Compléter ses rôles dans Tiers</button>
                       }
                       <p>Ne créez pas de doublon : recherchez le nom et les identifiants. Le formulaire Tiers conserve ses contrôles de création.</p>
-                      <button type="button" (click)="ouvrirTiersAssistant()">Créer un tiers dans le formulaire existant</button>
+                      <button type="button" (click)="ouvrirValidationTiers(ligne)">Créer un tiers dans le formulaire existant</button>
                     }
                     <button type="button" (click)="detailAssistant.set(null)">Fermer le détail</button>
-                    @if (choixAssistant().length) { <button type="button" class="primary" [disabled]="loading()" (click)="preparerAssistant()">Vérifier la sélection</button> }
+                    @if (choixAssistant().length) { <button type="button" class="primary" [disabled]="loading()" (click)="preparerAssistant()">{{ etapeAssistant() === 'TIERS' ? 'Préparer le tiers et sa règle' : 'Vérifier la sélection' }}</button> }
                   </section></div>
                 }
             @if (recapAssistant(); as recap) {

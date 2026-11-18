@@ -94,11 +94,14 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     const l={ ...ligne,candidats:[a,b] };analyser('FOURNISSEURS',[l]);selectionner(l,a);selectionner(l,b);page.preparerAssistant();
     expect(page.recapAssistant()?.selections.map(s=>s.montant)).toEqual([40,60]);expect(page.totalAssistant()).toBe(100);
   });
-  it('conserve la nature par défaut et exige un choix explicite pour sa correction', () => {
-    const c={ ...candidat,cle:'T:21',typePiece:'TIERS',pieceId:null,montantPropose:0,natureProposee:'FACTURE_FOURNISSEUR' as const };
-    const l={ ...ligne,operation:{ ...operation,natureOperation:'SALAIRE' as const },candidats:[c] };analyser('TIERS',[l]);selectionner(l,c);page.preparerAssistant();
-    expect(page.recapAssistant()?.selections[0].confirmerNature).toBe(false);
-    page.modifierChoixAssistant(1,c.cle,'confirmerNature',true);page.preparerAssistant();expect(page.recapAssistant()?.selections[0].confirmerNature).toBe(true);
+  it('prépare un tiers et sa règle sans paiement ni correction de classification', () => {
+    const c={...candidat,cle:'T:21',typePiece:'TIERS',pieceId:null,montantPropose:0,natureProposee:'FACTURE_FOURNISSEUR' as const};
+    const l={...ligne,operation:{...operation,tiersId:null,natureOperation:'SALAIRE' as const},candidats:[c]} as LigneAssistant;
+    analyser('TIERS',[l]);selectionner(l,c);page.preparerAssistant();
+    expect(page.recapAssistant()).toBeNull();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('tiers',expect.stringContaining('validationBancaire=1'),expect.any(String));
+    expect(navigate.mock.calls[0][1]).toContain('tiersProposeId=21');
+    expect(page.choixAssistant()[0].choix.confirmerNature).toBe(false);
   });
   it('un changement de société ou de filtres interdit la confirmation périmée', () => {
     analyser();selectionner();page.preparerAssistant();societe.mockReturnValue(2);page.confirmerAssistant();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
@@ -231,6 +234,27 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   it('ne sélectionne pas en lot une ligne ambiguë même si un seul candidat est dit sûr', () => {
     analyser('FOURNISSEURS',[{...ligne,candidats:[candidat,{...candidat,cle:'P:ACHAT:11',pieceId:11,sur:false}]}]);
     page.selectionnerSuresAssistant();expect(page.choixAssistant()).toHaveLength(0);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
+  it('affiche tous les tiers candidats et remplace le choix au lieu de cumuler des tiers', () => {
+    const candidats=[21,22,23].map(id=>({...candidat,cle:'T:'+id,typePiece:'TIERS',pieceId:null,tiersId:id,nomTiers:'Tiers '+id,sur:false}));
+    const l={...ligne,operation:{...operation,tiersId:null},candidats} as LigneAssistant;
+    const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();
+    analyser('TIERS',[l]);fixture.detectChanges();const html:HTMLElement=fixture.nativeElement;
+    expect(html.querySelectorAll('tbody input[type="radio"]')).toHaveLength(3);
+    expect(page.choixAssistant()).toHaveLength(0);selectionner(l,candidats[0]);selectionner(l,candidats[2]);
+    expect(page.choixAssistant().map(s=>s.choix.tiersId)).toEqual([23]);
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
+  it('recharge le tiers confirmé au retour sans proposer une seconde association', () => {
+    Object.assign(TestBed.inject(ActivatedRoute),{queryParamMap:of(convertToParamMap({vue:'operations',assistant:'tiers',operationId:'1',tiersProposeId:'99',tiersValideId:'99'}))});
+    vi.spyOn(page,'charger').mockImplementation(()=>{});initialiserPage.call(page);
+    api['obtenirTiersAssistant']=vi.fn();
+    api['previsualiserAssistant'].mockReturnValue(of({...apercu,etape:'TIERS',lignes:[{...ligne,operation:{...operation,tiersId:99,tiersReconnu:'Tiers confirmé'}}]}));
+    page.previsualiserAssistant();
+    expect(page.operationsAffichees()[0].tiersReconnu).toBe('Tiers confirmé');expect(page.choixAssistant()).toHaveLength(0);
+    expect(api['obtenirTiersAssistant']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
 
 });
