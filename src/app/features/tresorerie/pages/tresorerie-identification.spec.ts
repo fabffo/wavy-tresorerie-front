@@ -143,4 +143,69 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   const editeur=html.querySelector('[aria-label="Identification du tiers"]');expect(editeur).not.toBeNull();expect(editeur?.textContent).toContain('Valider');
   expect(editeur?.querySelector('input[type="checkbox"]')).toBeNull();expect(editeur?.textContent).not.toMatch(/disponible|échéance|justificatif|nature actuelle|fiche Tiers/i);expect(html.querySelector('[role="dialog"]')).toBeNull();
  });
+ it.each([
+  ['VIR INST vers ELIOS DIGITAL SASU - Wavy services 20251102 M.Baroudi nov25','ELIOS DIGITAL SASU','ELIOS DIGITAL SASU'],
+  ['VIR INST vers ELIOS DIGITAL SASU - Wavy services 20251102 M.Baroudi nov25','Malek Baroudi','M.BAROUDI'],
+  ['PAIEMENT BENOME - BENOIT SIRA','Benome','BENOME'],
+  ['PAIEMENT BENOME - BENOIT SIRA','Benoit Sira','BENOIT SIRA'],
+  ['PAIEMENT BENOME - B.Sira','Benoit Sira','B.SIRA'],
+  ['PAIEMENT BENOME - SIRA','Benoit Sira',''],
+  ['PAIEMENT BENOME - BENOIT SIRA','Autre société',''],
+ ])('ancre le motif dans le tiers sélectionné : %s / %s', (libelle,nom,motif)=>{
+  expect(page.proposerMotifBancaire(libelle,nom)).toBe(motif);
+ });
+ it('recalcule les motifs et les vrais identifiants lors des clics radio, même avec une liste réordonnée',async()=>{
+  const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();
+  const candidats=[{...candidat,cle:'T:57',tiersId:57,nomTiers:'Malek Baroudi',sur:false},{...candidat,cle:'T:9',tiersId:9,nomTiers:'ELIOS DIGITAL SASU',sur:false},{...candidat,cle:'T:203',tiersId:203,nomTiers:'Wavy Services Immo',sur:false}];
+  const l={...ligne,operation:{...operation,libelle:'VIR INST vers ELIOS DIGITAL SASU - Wavy services 20251102 M.Baroudi nov25'},candidats};
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));page.operations.set([l.operation]);page.previsualiserAssistant();fixture.detectChanges();const html:HTMLElement=fixture.nativeElement;
+  const labels=Array.from(html.querySelectorAll<HTMLLabelElement>('label.bank-tier-choice'));
+  expect(labels.map(label=>label.querySelector<HTMLInputElement>('input')?.value)).toEqual(['57','9','203']);
+  for(const label of labels){expect(label.firstElementChild?.tagName).toBe('INPUT');expect(label.children[1].tagName).toBe('SPAN');}
+  labels[0].click();fixture.detectChanges();expect(page.identification()).toMatchObject({tiersId:57,nomTiers:'Malek Baroudi',motif:'M.BAROUDI'});
+  labels[1].querySelector('span')!.click();fixture.detectChanges();expect(page.identification()).toMatchObject({tiersId:9,nomTiers:'ELIOS DIGITAL SASU',motif:'ELIOS DIGITAL SASU'});
+  expect(labels[0].querySelector<HTMLInputElement>('input')?.checked).toBe(false);expect(labels[1].querySelector<HTMLInputElement>('input')?.checked).toBe(true);
+  expect(html.querySelector<HTMLInputElement>('.identification-inline input')?.value).toBe('ELIOS DIGITAL SASU');
+
+  await page.validerIdentification();
+  expect(api['enregistrerRegleIdentification']).toHaveBeenCalledWith(9,'ELIOS DIGITAL SASU');
+  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({selections:[expect.objectContaining({tiersId:9,candidatCle:'MANUEL:9',confirmerNature:false,pieceId:null,montant:0})]}));
+  expect(page.operations()[0]).toMatchObject({tiersId:9,natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE',statutRapprochement:'NON_RAPPROCHEE'});
+ });
+ it('ne reprend ni le motif ni la réponse tardive d’un autre candidat',()=>{
+  const l={...ligne,candidats:[candidat,{...candidat,cle:'T:57',tiersId:57,nomTiers:'Malek Baroudi'}],operation:{...operation,libelle:'VIR vers ELIOS DIGITAL SASU M.Baroudi'}};
+  sessionStorage.setItem('wavy-identification:1:3:2:91',JSON.stringify({tiersId:57,motif:'M.BAROUDI',incertain:false}));
+  const attente=new Subject<RegleBancaireIdentification[]>();api['reglesIdentification'].mockReturnValueOnce(attente);
+  page.choisirPropositionIdentification(l,l.candidats[1]);page.choisirPropositionIdentification(l,l.candidats[0]);
+  attente.next([{...regle,tiersId:57,motif:'M.BAROUDI'}]);attente.complete();
+  expect(page.identification()).toMatchObject({tiersId:9,motif:'ELIOS DIGITAL SASU'});
+ });
+ it('réutilise uniquement la règle adaptée au tiers choisi et préserve les modifications du motif',()=>{
+  const l={...ligne,candidats:[candidat,{...candidat,tiersId:57,cle:'T:57',nomTiers:'Malek Baroudi'}],operation:{...operation,libelle:'VIR vers ELIOS DIGITAL SASU M.Baroudi'}};
+  api['reglesIdentification'].mockReturnValue(of([{...regle,tiersId:57,motif:'M.BAROUDI'},{...regle,motif:'ELIOS DIGITAL'}]));
+  page.choisirPropositionIdentification(l,l.candidats[0]);expect(page.identification()?.motif).toBe('ELIOS DIGITAL');
+  const attente=new Subject<RegleBancaireIdentification[]>();api['reglesIdentification'].mockReturnValueOnce(attente);
+  page.choisirPropositionIdentification(l,l.candidats[0]);page.modifierIdentification('motif','ELIOS DIGITAL SASU');
+  attente.next([{...regle,motif:'ELIOS'}]);attente.complete();expect(page.identification()?.motif).toBe('ELIOS DIGITAL SASU');
+ });
+ it('ne propose pas un motif personnel ambigu entre deux personnes',()=>{
+  const l={...ligne,candidats:[{...candidat,tiersId:57,cle:'T:57',nomTiers:'Malek Baroudi'},{...candidat,tiersId:58,cle:'T:58',nomTiers:'Michel Baroudi'}],operation:{...operation,libelle:'VIR M.Baroudi'}};
+  page.choisirPropositionIdentification(l,l.candidats[0]);expect(page.identification()?.motif).toBe('');
+ });
+ it('ne réutilise pas pour ELIOS une règle personnelle désignant un autre candidat',()=>{
+  const l={...ligne,candidats:[candidat,{...candidat,tiersId:57,cle:'T:57',nomTiers:'Malek Baroudi'}],operation:{...operation,libelle:'VIR vers ELIOS DIGITAL SASU M.Baroudi'}};
+  api['reglesIdentification'].mockReturnValue(of([{...regle,motif:'M.BAROUDI'}]));page.choisirPropositionIdentification(l,candidat);
+  expect(page.identification()?.motif).toBe('ELIOS DIGITAL SASU');
+ });
+ it('le choix Benome ne transmet jamais le tiers Benoit Sira et conserve les autres opérations',async()=>{
+  const l={...ligne,candidats:[{...candidat,tiersId:6,cle:'T:6',nomTiers:'Benome'},{...candidat,tiersId:42,cle:'T:42',nomTiers:'Benoit Sira'}],operation:{...operation,libelle:'VIR BENOME BENOIT SIRA'}};
+  const autre={...ligne,operation:{...operation,id:92,libelle:'Autre opération'}};api['previsualiserAssistant'].mockReturnValue(of(reponse([l,autre])));page.previsualiserAssistant();
+  page.operations.set([l.operation,autre.operation]);api['lireTiersIdentification'].mockReturnValue(of({...tiers,id:6,raisonSociale:'Benome'}));api['enregistrerRegleIdentification'].mockReturnValue(of({...regle,tiersId:6,motif:'BENOME'}));
+  page.choisirPropositionIdentification(l,l.candidats[1]);expect(page.identification()?.motif).toBe('BENOIT SIRA');
+  page.choisirPropositionIdentification(l,l.candidats[0]);expect(page.identification()).toMatchObject({tiersId:6,nomTiers:'Benome',motif:'BENOME'});
+  await page.validerIdentification();expect(api['enregistrerRegleIdentification']).toHaveBeenCalledWith(6,'BENOME');
+  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({selections:[expect.objectContaining({tiersId:6,candidatCle:'MANUEL:6'})]}));
+  expect(page.operations()[1]).toEqual(autre.operation);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([92]);
+ });
+
 });

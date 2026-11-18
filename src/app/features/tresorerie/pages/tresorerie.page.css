@@ -564,3 +564,6 @@ small {
 .identification-inline { border-top:1px solid #cbd5e1;margin-top:.5rem;padding-top:.5rem; }
 .identification-inline label { display:block;margin-block:.4rem; }
 .identification-inline input,.identification-inline select { max-width:100%;box-sizing:border-box; }
+
+.bank-tier-choice { display:flex;flex-direction:row;align-items:center;gap:.35rem;cursor:pointer; }
+.bank-tier-choice input { flex:none;width:1rem;height:1rem;min-height:0;margin:0;padding:0; }

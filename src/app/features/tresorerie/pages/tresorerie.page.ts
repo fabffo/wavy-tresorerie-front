@@ -405,6 +405,7 @@ export class TresoreriePage implements OnInit {
   readonly reglesIdentification = signal<RegleBancaireIdentification[]>([]);
   readonly chargementIdentification = signal(false);
   private sequenceIdentification = 0;
+  private motifIdentificationModifie = false;
 
   private contexteIdentification():string {
     return `${this.cleContexteCartes()}:${this.contexteService.utilisateurId?.() ?? ''}`;
@@ -418,6 +419,7 @@ export class TresoreriePage implements OnInit {
   nomIdentification(t:TiersIdentification):string { return t.raisonSociale || [t.prenom,t.nom].filter(Boolean).join(' ') || t.nomNormalise || `Tiers ${t.id}`; }
   modifierIdentification(champ:keyof BrouillonIdentification,valeur:string):void {
     if(this.loading())return;
+    if(champ==='motif')this.motifIdentificationModifie=true;
     this.identification.update(d=>d ? {...d,[champ]:valeur} : d);this.erreurIdentification.set(null);
   }
   private regleCorrespondante(r:RegleBancaireIdentification,libelle:string):boolean {
@@ -434,36 +436,53 @@ export class TresoreriePage implements OnInit {
     if(conflit)throw new Error('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
     const equivalente=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && r.typeMotif==='CONTIENT');
     if(equivalente && !equivalente.actif)throw new Error('Une règle équivalente est désactivée ; elle ne sera pas réactivée automatiquement.');
-    return actives.find(r=>r.tiersId===d.tiersId && this.regleCorrespondante(r,libelle)) ?? null;
+    return actives.find(r=>r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && this.regleCorrespondante(r,libelle)) ?? null;
+  }
+
+  private motifDunAutreCandidat(motif:string,tiersId:number|null,ligne:LigneAssistant):boolean {
+    const motifNormalise=this.normaliserIdentification(motif);
+    if(!motifNormalise)return false;
+    return ligne.candidats.some(c=>{
+      if(c.tiersId===tiersId)return false;
+      const nom=c.nomTiers.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+      return this.normaliserIdentification(c.nomTiers).includes(motifNormalise)
+        || (nom.length===2 && nom[0][0]+nom[1]===motifNormalise);
+    });
   }
 
   ouvrirValidationTiers(ligne:LigneAssistant,tiersId?:number):void {
     if(this.loading() || ligne.bloquee || !this.operationDisponible(ligne.operation) || ligne.operation.tiersId)return;
     const sequence=++this.sequenceIdentification,contexte=this.contexteIdentification();
+    this.motifIdentificationModifie=false;
     this.detailAssistant.set(null);this.menuOperation.set(null);this.erreurIdentification.set(null);this.doublonsIdentification.set([]);
     const candidat=ligne.candidats.find(c=>c.tiersId===tiersId);
     let reprise:{tiersId?:number;motif?:string;incertain?:boolean}|null=null;
     try {reprise=JSON.parse(sessionStorage.getItem(this.cleRepriseIdentification(ligne.operation.id)) || 'null');}
     catch {reprise={incertain:true};this.erreurIdentification.set('La reprise locale est illisible. Retrouvez la fiche existante avant de créer.');}
     const id=tiersId ?? reprise?.tiersId ?? null;
+    const motifRepriseBrut=(!tiersId || tiersId===reprise?.tiersId)?reprise?.motif:undefined;
+    const motifReprise=motifRepriseBrut && !this.motifDunAutreCandidat(motifRepriseBrut,id,ligne) ? motifRepriseBrut : undefined;
+    let motifPropose=motifReprise || this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? '');
+    if(!motifReprise && this.motifDunAutreCandidat(motifPropose,id,ligne))motifPropose='';
     this.identification.set({operationId:ligne.operation.id,tiersId:id,nomTiers:candidat?.nomTiers ?? '',
-      motif:((!tiersId || tiersId===reprise?.tiersId)?reprise?.motif:undefined) || this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? ''),nouveau:!id,
+      motif:motifPropose,nouveau:!id,
       typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',categorieMarchand:'',
       creationIncertaine:reprise?.incertain ?? false,tiersCree:!!reprise?.tiersId});
     this.chargementIdentification.set(true);
     this.api.reglesIdentification().subscribe({next:regles=>{
       if(sequence!==this.sequenceIdentification || contexte!==this.contexteIdentification())return;
       this.reglesIdentification.set(regles);
-      const adaptee=regles.filter(r=>r.actif && r.tiersId===id && this.regleCorrespondante(r,ligne.operation.libelle)).sort((a,b)=>b.motif.length-a.motif.length)[0];
-      if(adaptee && !reprise?.motif)this.identification.update(d=>d ? {...d,motif:adaptee.motif} : d);
+      const adaptee=regles.filter(r=>r.actif && r.typeRegle==='OPERATION_BANCAIRE' && r.tiersId===id && this.regleCorrespondante(r,ligne.operation.libelle) && !this.motifDunAutreCandidat(r.motif,id,ligne)).sort((a,b)=>b.motif.length-a.motif.length)[0];
+      if(adaptee && !motifReprise && !this.motifIdentificationModifie)this.identification.update(d=>d && d.tiersId===id && d.motif===motifPropose ? {...d,motif:adaptee.motif} : d);
     },error:e=>{if(sequence===this.sequenceIdentification){this.erreurIdentification.set(getHttpErrorMessage(e));this.chargementIdentification.set(false);}},complete:()=>{if(sequence===this.sequenceIdentification)this.chargementIdentification.set(false);}});
     if(id && !candidat)this.api.lireTiersIdentification(id).subscribe({next:t=>{
-      if(sequence===this.sequenceIdentification && contexte===this.contexteIdentification())this.identification.update(d=>d ? {...d,nomTiers:this.nomIdentification(t)} : d);
+      if(sequence===this.sequenceIdentification && contexte===this.contexteIdentification())this.identification.update(d=>d ? {...d,nomTiers:this.nomIdentification(t),motif:!motifReprise && !this.motifIdentificationModifie && d.motif===motifPropose ? this.proposerMotifBancaire(ligne.operation.libelle,this.nomIdentification(t)) : d.motif} : d);
     },error:e=>{if(sequence===this.sequenceIdentification)this.erreurIdentification.set(getHttpErrorMessage(e));}});
     if(!id && !this.rolesIdentification().length)this.api.rolesIdentification().subscribe({next:r=>{if(contexte===this.contexteIdentification())this.rolesIdentification.set(r.filter(x=>x!=='FOURNISSEUR'));},error:e=>this.erreurIdentification.set(getHttpErrorMessage(e))});
   }
 
   choisirPropositionIdentification(ligne:LigneAssistant,candidat:CandidatAssistant):void {
+    if(this.loading() || ligne.bloquee || !ligne.candidats.some(c=>c.tiersId===candidat.tiersId && c.cle===candidat.cle))return;
     this.selectionnerAssistant(ligne,candidat,true);this.ouvrirValidationTiers(ligne,candidat.tiersId);
   }
   hypothesesIdentification(ligne:LigneAssistant):Array<{type:'ORGANISATION'|'PERSONNE_PHYSIQUE';nom:string;prenom:string}> {
@@ -554,18 +573,31 @@ export class TresoreriePage implements OnInit {
   }
 
   proposerMotifBancaire(libelle: string, nomTiers = ''): string {
-    const domaines=[...libelle.toUpperCase().matchAll(/\b(?:WWW\.)?([A-Z0-9][A-Z0-9-]*(?:\.[A-Z][A-Z0-9-]*)+)\b/g)]
+    const nettoyer=(texte:string)=>texte.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+    const banque=' '+nettoyer(libelle)+' ',nom=nettoyer(nomTiers);
+    const domaines=[...libelle.toUpperCase().matchAll(/\b(?:WWW\.)?([A-Z0-9][A-Z0-9-]+(?:\.[A-Z][A-Z0-9-]*)+)\b/g)]
       .map(m=>m[1]).filter(d=>!['GMAIL.COM','OUTLOOK.COM','HOTMAIL.COM','YAHOO.COM'].includes(d));
-    if (new Set(domaines).size===1) return domaines[0];
+    const generiques=new Set(['SASU','SAS','SARL','SA','LTD','LLC','LIMITED','FRANCE','IRELAND','SYSTEMS','SOFTWARE','SERVICES','SERVICE','COMPANY','UNLIMITED','BANQUE','CREDIT']);
+    const termes=nom.split(' ').filter(t=>t.length>=3 && !generiques.has(t));
+    if(nom) {
+      // Une identité sélectionnée interdit tout repli sur une autre contrepartie du libellé.
+      const domaine=domaines.find(d=>termes.includes(d.split('.')[0]));
+      if(domaine)return domaine;
+      if(termes.length && banque.includes(' '+nom+' '))return nom;
+      const mots=nom.split(' ');
+      if(mots.length===2 && mots[1].length>=4) {
+        const personnel=new RegExp('\\b'+mots[0][0]+'(?:\\s*\\.\\s*|\\s+)'+mots[1]+'\\b');
+        const texte=libelle.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase();
+        if(personnel.test(texte))return mots[0][0]+'.'+mots[1];
+      }
+      const presents=termes.filter(t=>banque.includes(' '+t+' '));
+      // Sans le prénom ou son initiale, un patronyme isolé ne suffit pas à proposer une identité.
+      if(mots.length===2 && presents.length===1 && presents[0]===mots[1] && !generiques.has(mots[0]))return '';
+      return presents.length===1 ? presents[0] : '';
+    }
     const societe=libelle.match(/\b(?:vers|pour)\s+([\p{L}\p{N}][\p{L}\p{N} .'&-]*?\b(?:SASU|SAS|SARL|SA|LTD|LIMITED))\b/iu)?.[1];
     if(societe)return societe.trim().toUpperCase();
-    const nettoyer=(texte:string)=>texte.normalize('NFD').replace(/\p{M}/gu,'').toUpperCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
-    const nomComplet=nettoyer(nomTiers);
-    if(nomComplet.length>=3 && /\b(SASU|SAS|SARL|LTD|LIMITED)\b/.test(nomComplet) && (' '+nettoyer(libelle)+' ').includes(' '+nomComplet+' '))return nomComplet;
-    const termes=nettoyer(nomTiers).split(/ +/).filter(t=>t.length>=4 && !['FRANCE','IRELAND','SYSTEMS','SOFTWARE','SERVICES','COMPANY','UNLIMITED','BANQUE','CREDIT'].includes(t));
-    const banque=' '+nettoyer(libelle)+' ';
-    const reconnu=termes.find(t=>banque.includes(' '+t+' '));
-    if (reconnu) return reconnu;
+    if(new Set(domaines).size===1)return domaines[0];
     return libelle.normalize('NFKC').replace(/\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b/g,' ')
       .replace(/\b[A-Z]{0,3}\d{4,}[A-Z0-9]*\b/gi,' ').replace(/[£€$]/g,' ').replace(/\b(PAIEMENT|CARTE|CB|VIREMENT|VIR|SEPA|PRLV|PRELEVEMENT|ACHAT)\b/gi,' ')
       .replace(/\s+/g,' ').trim().toUpperCase().slice(0,200);

@@ -493,11 +493,11 @@
                   <td class="bank-proposition">
                     @if (ligneAssistant(operation.id); as ligne) {
                       @if (propositionSure(ligne); as candidat) {
-                        <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + operation.id" [checked]="etapeAssistant() === 'TIERS' ? identification()?.operationId === operation.id && identification()?.tiersId === candidat.tiersId : estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="etapeAssistant() === 'TIERS' ? choisirPropositionIdentification(ligne,candidat) : selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /> {{ candidat.numeroPiece || candidat.nomTiers }}</label>@if(etapeAssistant() === 'TIERS'){<small>Règle bancaire reconnue — choix modifiable</small>}
+                        <label [class.bank-tier-choice]="etapeAssistant() === 'TIERS'"><input [value]="candidat.tiersId" [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + operation.id" [checked]="etapeAssistant() === 'TIERS' ? identification()?.operationId === operation.id && identification()?.tiersId === candidat.tiersId : estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="etapeAssistant() === 'TIERS' ? choisirPropositionIdentification(ligne,candidat) : selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /><span>{{ candidat.numeroPiece || candidat.nomTiers }}</span></label>@if(etapeAssistant() === 'TIERS'){<small>Règle bancaire reconnue — choix modifiable</small>}
                       } @else {
                         @for (c of (etapeAssistant() === 'TIERS' ? ligne.candidats : ligne.candidats.slice(0,2)); track c.cle) {
                           @if(etapeAssistant() === 'TIERS') {
-                            <label><input type="radio" [name]="'tiers-' + operation.id" [disabled]="loading() || ligne.bloquee" [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,true)" /> {{ c.nomTiers }}</label>
+                            <label class="bank-tier-choice"><input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId" [disabled]="loading() || ligne.bloquee" [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId" (change)="choisirPropositionIdentification(ligne,c)" /><span>{{ c.nomTiers }}</span></label>
                           } @else { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
                         }
                         @if (etapeAssistant() !== 'TIERS' && ligne.candidats.length === 1 && !ligne.candidats[0].sur) { <strong>À vérifier avant confirmation</strong> }
