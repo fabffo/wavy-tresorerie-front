@@ -157,6 +157,7 @@ export class TresoreriePage implements OnInit {
   };
   readonly colonnesOperations: Array<{ cle: OperationBancaireSortBy; libelle: string }> = [
     { cle: 'dateOperation', libelle: 'Date opération' },
+    { cle: 'libelle', libelle: 'Libellé' },
     { cle: 'tiersReconnu', libelle: 'Tiers' },
     { cle: 'numeroPieceAssociee', libelle: 'Pièce associée' },
     { cle: 'natureOperation', libelle: 'Nature' },

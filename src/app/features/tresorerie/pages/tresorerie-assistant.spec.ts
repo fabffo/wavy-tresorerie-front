@@ -208,6 +208,35 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(page.triOperations()).toEqual({sortBy:'tiersReconnu',sortDirection:'DESC'});expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
 
+  it('trie par libellé dans les deux sens en conservant le périmètre bancaire', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    page.choixImport.set('42');
+    page.filtresOperations.set({ tiersReconnu: 'Adobe', statutConsultation: 'TIERS_IDENTIFIE' });
+    page.pageOperations.set(2);
+    api['operations'] = vi.fn(() => of({ content: [operation], totalElements: 20, totalPages: 2 }));
+    api['compteursOperations'] = vi.fn(() => of({
+      total: 20, rapprochees: 0, partielles: 0, tiersIdentifies: 20, nonRapprochees: 0, sansTiers: 0,
+    }));
+
+    fixture.detectChanges();
+    const entete = fixture.nativeElement.querySelector('thead th:nth-child(2)') as HTMLElement;
+    const bouton = entete.querySelector('button')!;
+    const filtres = { importId: '42', tiersReconnu: 'Adobe', statutConsultation: 'TIERS_IDENTIFIE' };
+    bouton.click();
+    fixture.detectChanges();
+    expect(entete.getAttribute('aria-sort')).toBe('descending');
+    expect(api['operations']).toHaveBeenLastCalledWith(filtres, { page: 0, size: 10, sortBy: 'libelle', sortDirection: 'DESC' });
+
+    bouton.click();
+    fixture.detectChanges();
+    expect(entete.getAttribute('aria-sort')).toBe('ascending');
+    expect(api['operations']).toHaveBeenLastCalledWith(filtres, { page: 0, size: 10, sortBy: 'libelle', sortDirection: 'ASC' });
+    expect(api['compteursOperations']).toHaveBeenLastCalledWith(filtres);
+    expect(page.compteursOperations()?.total).toBe(20);
+  });
+
   it('invalide les propositions après rechargement des opérations modifiées', () => {
     analyser();selectionner();page.preparerAssistant();
     api['operations']=vi.fn(()=>of({content:[operation],totalElements:1,totalPages:1}));
@@ -224,13 +253,16 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(page.pageOperations()).toBe(1);expect(api['operations']).toHaveBeenCalledTimes(2);expect(fin).toHaveBeenCalledTimes(1);expect(page.bilanAssistant()).toEqual(bilan);
   });
 
-  it('limite le tableau à sept colonnes et consulte dans le même écran', () => {
+  it('affiche le libellé bancaire en deuxième colonne et en entier dans le détail', () => {
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
     page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([operation]);fixture.detectChanges();
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
-      'Date opération','Tiers','Pièce associée','Nature','Montant','Statut','Voir']);
+      'Date opération','Libellé','Tiers','Pièce associée','Nature','Montant','Statut','Voir']);
+    const libelle = html.querySelector('tbody tr td:nth-child(2) span');
+    expect(libelle?.textContent).toBe(operation.libelle);
+    expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
     expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir']);

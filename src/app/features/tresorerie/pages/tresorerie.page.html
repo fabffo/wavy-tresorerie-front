@@ -588,6 +588,7 @@
               @for (operation of operationsPage(); track operation.id) {
                 <tr>
                   <td>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</td>
+                  <td><span class="libelle-bancaire" [title]="operation.libelle">{{ operation.libelle }}</span></td>
                   <td>{{ operation.tiersReconnu || (operation.tiersId ? 'Tiers n° ' + operation.tiersId : 'Non identifié') }}</td>
                   <td>{{ pieceAssociee(operation) }}</td>
                   <td>{{ libelleNature(operation.natureOperation) }}</td>
@@ -595,7 +596,7 @@
                   <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>
                   <td><button type="button" [attr.aria-label]="'Voir ' + operation.libelle" (click)="voirOperation(operation)">Voir</button></td>
                 </tr>
-              } @empty { <tr><td colspan="7">Aucune opération pour cet import et ces filtres.</td></tr> }
+              } @empty { <tr><td colspan="8">Aucune opération pour cet import et ces filtres.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -696,7 +697,7 @@
         @if (operationConsultee(); as operationListe) {
           @let operation = detailOperation()?.operation ?? operationListe;
           <div class="modal-backdrop" (keydown.escape)="operationConsultee.set(null)"><section role="dialog" aria-modal="true" aria-label="Détail de l’opération" class="manual-match-modal">
-            <h3>{{ operation.libelle }}</h3>
+            <h3 class="text-break">{{ operation.libelle }}</h3>
             <dl><dt>Date opération / valeur</dt><dd>{{ operation.dateOperation }} / {{ operation.dateValeur || 'Absente' }}</dd>
               <dt>Compte</dt><dd>{{ operation.compteBancaireLibelle }}</dd><dt>Débit / crédit</dt><dd>{{ montant(operation.debit) }} / {{ montant(operation.credit) }}</dd>
               <dt>Montant signé</dt><dd>{{ montant(montantSigne(operation)) }}</dd><dt>Sens / type</dt><dd>{{ operation.sens }} / {{ operation.typeOperation }}</dd>

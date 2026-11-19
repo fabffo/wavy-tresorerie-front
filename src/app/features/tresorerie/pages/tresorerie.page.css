@@ -183,6 +183,14 @@ button.danger {
   width: 100%;
 }
 
+.libelle-bancaire {
+  display: block;
+  width: clamp(16rem, 28vw, 26rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rapprochements-table {
   min-width: 1180px;
 }
