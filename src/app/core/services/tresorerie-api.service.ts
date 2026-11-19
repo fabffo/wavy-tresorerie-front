@@ -20,7 +20,7 @@ import {
   LigneRapprochementManuelPayload,
   ImportReleve,
   ImportReleveResultat,
-  FiltresOperations,
+  FiltresOperations, CompteursOperations, DetailOperation,
   NatureOperationBancaire,
   OperationBancaire,
   OperationBancairePayload,
@@ -78,6 +78,17 @@ export class TresorerieApiService {
         .set('sortDirection', parametres.sortDirection);
     }
     return this.http.get<PageResponse<OperationBancaire>>(`${this.baseUrl}/operations-bancaires`, { params });
+  }
+
+  compteursOperations(filtres: FiltresOperations) {
+    const params = new HttpParams({ fromObject: Object.fromEntries(
+      Object.entries(filtres).filter(([, valeur]) => !!valeur)
+    ) });
+    return this.http.get<CompteursOperations>(`${this.baseUrl}/operations-bancaires/compteurs`, { params });
+  }
+
+  consulterOperation(id: number) {
+    return this.http.get<DetailOperation>(`${this.baseUrl}/operations-bancaires/${id}/detail`);
   }
 
   operation(id: number) {
@@ -154,6 +165,10 @@ export class TresorerieApiService {
   creerTiersIdentification(demande:CreationTiersIdentification) {
     return this.http.post<TiersIdentification>(`${environment.apiBaseUrl}/api/tiers`,demande);
   }
+  naturesIdentification(type: 'organisation' | 'personne') {
+    return this.http.get<string[]>(`${environment.apiBaseUrl}/api/tiers/referentiels/natures-${type}`);
+  }
+
   rolesIdentification() {return this.http.get<string[]>(`${environment.apiBaseUrl}/api/tiers/referentiels/roles`);}
   reglesIdentification() {
     return this.http.get<RegleBancaireIdentification[]>(`${environment.apiBaseUrl}/api/factures/achats/rapprochement-fournisseurs/regles`,{params:new HttpParams().set('typeRegle','OPERATION_BANCAIRE')});

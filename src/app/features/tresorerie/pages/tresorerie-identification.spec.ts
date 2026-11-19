@@ -20,13 +20,14 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  let page:TresoreriePage;let api:Record<string,ReturnType<typeof vi.fn>>;let societe:number;let tenant:number;let navigate:ReturnType<typeof vi.fn>;
  beforeEach(()=>{
   sessionStorage.clear();societe=3;tenant=1;navigate=vi.fn();
-  api={previsualiserAssistant:vi.fn(()=>of(reponse())),reglesIdentification:vi.fn(()=>of([])),rolesIdentification:vi.fn(()=>of(['AUTRE','SALARIE','FOURNISSEUR_GENERAL','MARCHAND'])),
+  api={previsualiserAssistant:vi.fn(()=>of(reponse())),reglesIdentification:vi.fn(()=>of([])),naturesIdentification:vi.fn((type:string)=>of(type==='personne'?['SALARIE_INTERNE']:['ENTREPRISE'])),rolesIdentification:vi.fn(()=>of(['AUTRE','SALARIE','FOURNISSEUR_GENERAL','MARCHAND'])),
    lireTiersIdentification:vi.fn(()=>of(tiers)),listerTiersIdentification:vi.fn(()=>of([])),creerTiersIdentification:vi.fn(()=>of(tiers)),
    enregistrerRegleIdentification:vi.fn(()=>of(regle)),rechercherTiersAssistant:vi.fn(()=>of([{id:9,libelle:'ELIOS DIGITAL SASU',roles:['FOURNISSEUR_SERVICES']}])),
    confirmerAssistant:vi.fn(()=>of({reussis:1,refuses:0,conflits:0,aReprendre:0,lignes:[{operationId:91,statut:'SUCCES',message:'Tiers associé',rapprochementId:null}]}))};
   TestBed.configureTestingModule({providers:[{provide:TresorerieApiService,useValue:api},{provide:ActivatedRoute,useValue:{}},{provide:Router,useValue:{navigate:vi.fn()}},
    {provide:ContexteService,useValue:{changementSociete:signal(0),societeCouranteId:()=>societe,tenantId:()=>tenant,utilisateurId:()=>2}},{provide:WavyShellBridgeService,useValue:{navigate}}]});
   vi.spyOn(TresoreriePage.prototype,'ngOnInit').mockImplementation(()=>{});
+  vi.spyOn(TresoreriePage.prototype,'chargerOperations').mockImplementation(fin=>fin?.());
   page=TestBed.runInInjectionContext(()=>new TresoreriePage());page.operations.set([operation]);page.previsualiserAssistant();
  });
  afterEach(()=>vi.restoreAllMocks());
@@ -34,12 +35,14 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  function nouvelle(type:'ORGANISATION'|'PERSONNE_PHYSIQUE'='ORGANISATION'){
   api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[]}])));
   page.ouvrirValidationTiers({...ligne,candidats:[]});page.modifierIdentification('typeTiers',type);page.modifierIdentification('role',type==='PERSONNE_PHYSIQUE'?'SALARIE':'AUTRE');
+  page.modifierIdentification('nature',type==='PERSONNE_PHYSIQUE'?'SALARIE_INTERNE':'ENTREPRISE');
+  page.modifierIdentification('pieceRapprochementAutorisee',type==='PERSONNE_PHYSIQUE'?'non':'oui');
   page.modifierIdentification('raisonSociale','ELIOS DIGITAL SASU');page.modifierIdentification('nom','Baroudi');page.modifierIdentification('prenom','Karim');
  }
- it('charge en lecture seule les opérations sans tiers et suspend seulement les filtres incompatibles',()=>{
+ it('charge en lecture seule les opérations sans tiers et conserve les filtres combinés',()=>{
   page.etapeAssistant.set('FOURNISSEURS');page.filtresOperations.set({tiersReconnu:'ELIOS',typeTiersReconnu:'FOURNISSEUR',natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE'});
   page.changerEtapeAssistant('TIERS');expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('TIERS','CARTE',expect.objectContaining({natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE'}));
-  expect(page.filtresOperations().tiersReconnu).toBeUndefined();page.changerEtapeAssistant('FOURNISSEURS');expect(page.filtresOperations().tiersReconnu).toBe('ELIOS');
+  expect(page.filtresOperations().tiersReconnu).toBe('ELIOS');
   expect(api['confirmerAssistant']).not.toHaveBeenCalled();expect(api['creerTiersIdentification']).not.toHaveBeenCalled();expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
  });
  it('réutilise une règle adaptée, confirme sans paiement et retire immédiatement la ligne',async()=>{
@@ -71,7 +74,8 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  });
  it.each(['ORGANISATION','PERSONNE_PHYSIQUE'] as const)('crée un tiers de type %s, sa règle et son association en une validation',async type=>{
   nouvelle(type);await page.validerIdentification();expect(api['creerTiersIdentification']).toHaveBeenCalledTimes(1);
-  expect(api['creerTiersIdentification']).toHaveBeenCalledWith(expect.objectContaining({typeTiers:type,roles:[type==='PERSONNE_PHYSIQUE'?'SALARIE':'AUTRE']}));
+  expect(api['creerTiersIdentification']).toHaveBeenCalledWith(expect.objectContaining({typeTiers:type,roles:[type==='PERSONNE_PHYSIQUE'?'SALARIE':'AUTRE'],actif:true,pieceRapprochementAutorisee:type==='ORGANISATION',
+    ...(type==='ORGANISATION'?{natureOrganisation:'ENTREPRISE',nomCommercial:'ELIOS DIGITAL SASU'}:{naturePersonne:'SALARIE_INTERNE'})}));
   expect(api['enregistrerRegleIdentification']).toHaveBeenCalledTimes(1);expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);expect(page.operationsAffichees()).toHaveLength(0);
  });
  it('accepte une saisie libre et exige les informations obligatoires d’une personne',async()=>{
@@ -214,7 +218,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));page.previsualiserAssistant();
   expect(page.identificationsCertaines()).toHaveLength(1);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);
-  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({etape:'TIERS',perimetre:{operationIds:[91]},confirmation:true,selections:[{
+  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({etape:'TIERS',perimetre:expect.objectContaining({importId:'0',consultation:true}),confirmation:true,selections:[{
     operationId:91,candidatCle:'REGLE_BANCAIRE:9',tiersId:9,pieceId:null,montant:0,confirmerNature:false,verifierJustificatif:false,confirmerAffectation:false,
   }]}));
   expect(page.operations()[0]).toMatchObject({tiersId:9,tiersReconnu:'Benome',natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE',statutRapprochement:'NON_RAPPROCHEE',montant:10140});
@@ -230,10 +234,11 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
     {...ligne,operation:{...operation,id:94,tiersId:9},candidats:[sure]},
   ])));page.previsualiserAssistant();expect(page.identificationsCertaines()).toHaveLength(0);await page.identifierAutomatiquement();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
- it('ne traite que la page affichée et conserve les filtres',async()=>{
+ it('traite toutes les pages et conserve les filtres',async()=>{
   const lignes=Array.from({length:11},(_,i)=>({...ligne,operation:{...operation,id:91+i},candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}));
   api['previsualiserAssistant'].mockReturnValue(of(reponse(lignes)));page.filtresOperations.set({natureOperation:'SALAIRE'});page.previsualiserAssistant();page.taillePageOperations.set(10);page.pageResultatsAssistant.set(2);
-  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({perimetre:{operationIds:[101],natureOperation:'SALAIRE'}}));
+  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({perimetre:expect.objectContaining({natureOperation:'SALAIRE',consultation:true}),selections:expect.any(Array)}));
+  expect(api['confirmerAssistant'].mock.calls[0][0].selections).toHaveLength(11);
  });
  it('n’envoie jamais un lot sous une autre société ou après changement des filtres',async()=>{
   api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}])));page.previsualiserAssistant();societe=4;
@@ -247,7 +252,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  it('affiche un bouton direct sans ajouter de confirmation ni de formulaire de paiement',()=>{
   const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();
   api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}])));page.previsualiserAssistant();fixture.detectChanges();
-  const html:HTMLElement=fixture.nativeElement;expect(html.textContent).toContain('Identifier automatiquement (1)');expect(html.querySelector('[role="dialog"]')).toBeNull();
+  const html:HTMLElement=fixture.nativeElement;expect(html.textContent).toContain('Appliquer les identifications certaines');expect(html.querySelector('[role="dialog"]')).toBeNull();
   expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
 

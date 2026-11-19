@@ -49,6 +49,8 @@ export interface OperationBancaire {
   debit: number;
   credit: number;
   montant: number;
+  montantRapproche?: number | null;
+  numeroPieceAssociee?: string | null;
   sens: 'CREDIT' | 'DEBIT';
   typeOperation: string;
   tiersReconnu?: string | null;
@@ -125,6 +127,7 @@ export interface PageResponse<T> {
 export type SortDirection = 'ASC' | 'DESC';
 
 export type OperationBancaireSortBy =
+  | 'montantSigne' | 'numeroPieceAssociee' | 'statutConsultation' | 'natureOperation'
   | 'dateOperation'
   | 'libelle'
   | 'compte'
@@ -161,7 +164,26 @@ export type StatutClassificationOperation = 'NON_CLASSEE' | 'CLASSEE_AUTO' | 'CL
 
 export type TypeTiersReconnu = 'FOURNISSEUR' | 'FOURNISSEUR_SERVICE' | 'CLIENT' | 'SALARIE' | 'ADMINISTRATION' | 'AUTRE';
 
+export type StatutConsultation = 'RAPPROCHEE' | 'PARTIELLE' | 'TIERS_IDENTIFIE' | 'NON_RAPPROCHEE';
+
+export interface CompteursOperations {
+  total: number;
+  rapprochees: number;
+  partielles: number;
+  tiersIdentifies: number;
+  nonRapprochees: number;
+  sansTiers: number;
+}
+
+export interface DetailOperation {
+  operation: OperationBancaire;
+  historique: RapprochementBancaire[];
+  solde: number;
+}
+
 export interface FiltresOperations {
+  importId?: string;
+  statutConsultation?: StatutConsultation;
   tiersReconnu?: string;
   typeTiersReconnu?: TypeTiersReconnu | '';
   natureOperation?: NatureOperationBancaire | '';
@@ -362,7 +384,7 @@ export interface ConfirmationCartesResultat {
 }
 
 export type EtapeAssistant = 'TIERS' | 'NOTES_FRAIS' | 'SALAIRES' | 'CLIENTS' | 'FOURNISSEURS' | 'PIECES';
-export interface PerimetreAssistant extends FiltresOperations { operationIds?: number[]; }
+export interface PerimetreAssistant extends FiltresOperations { operationIds?: number[]; consultation?: boolean; }
 export interface CandidatAssistant {
   cle: string; tiersId: number; nomTiers: string; typeTiers: TypeTiersReconnu;
   pieceId: number | null; numeroPiece: string | null; typePiece: string;
@@ -397,6 +419,7 @@ export interface TiersIdentification {
 export interface CreationTiersIdentification {
   typeTiers:'ORGANISATION'|'PERSONNE_PHYSIQUE';roles:string[];raisonSociale?:string;
   nom?:string;prenom?:string;natureOrganisation?:string;naturePersonne?:string;categorieMarchand?:string;
+  nomCommercial?:string;pieceRapprochementAutorisee:boolean;actif:boolean;
 }
 export interface RegleBancaireIdentification {
   id:number;tiersId:number;motif:string;typeMotif:string;typeRegle:string;actif:boolean;scorePriorite:number;
@@ -404,5 +427,5 @@ export interface RegleBancaireIdentification {
 export interface BrouillonIdentification {
   operationId:number;tiersId:number|null;nomTiers:string;motif:string;nouveau:boolean;
   typeTiers:'ORGANISATION'|'PERSONNE_PHYSIQUE';raisonSociale:string;nom:string;prenom:string;role:string;
-  nature:string;categorieMarchand:string;creationIncertaine:boolean;tiersCree:boolean;
+  nature:string;nomCommercial:string;pieceRapprochementAutorisee:string;actif:string;categorieMarchand:string;creationIncertaine:boolean;tiersCree:boolean;
 }

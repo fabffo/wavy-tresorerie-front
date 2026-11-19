@@ -2,6 +2,7 @@ import { restaurerFiltresEcheances, memoriserFiltresEcheances } from '../../../s
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { finalize, forkJoin, firstValueFrom } from 'rxjs';
 
@@ -24,7 +25,7 @@ import {
   FactureCandidateRapprochement,
   ImportReleve,
   ImportReleveResultat,
-  FiltresOperations,
+  FiltresOperations, CompteursOperations, DetailOperation, StatutConsultation,
   NatureOperationBancaire,
   OperationBancaire,
   OperationBancairePayload,
@@ -66,7 +67,7 @@ type ChampOperation =
 
 @Component({
   selector: 'app-tresorerie-page',
-  imports: [ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule],
   templateUrl: './tresorerie.page.html',
   styleUrl: './tresorerie.page.css',
 })
@@ -130,9 +131,10 @@ export class TresoreriePage implements OnInit {
   readonly candidatesRapprochement = signal<Array<FactureCandidateRapprochement & { selectionnee: boolean; montantRapproche: number }>>([]);
 
   readonly etapesAssistant: Array<{ id: EtapeAssistant; libelle: string }> = [
-    { id: 'TIERS', libelle: 'Identification des tiers' }, { id: 'NOTES_FRAIS', libelle: 'Notes de frais' },
-    { id: 'SALAIRES', libelle: 'Salaires' }, { id: 'CLIENTS', libelle: 'Factures clients' },
-    { id: 'FOURNISSEURS', libelle: 'Factures fournisseurs' }, { id: 'PIECES', libelle: 'Opérations sans facture' },
+    { id: 'TIERS', libelle: 'Tiers' },
+    { id: 'SALAIRES', libelle: 'Salariés' },
+    { id: 'CLIENTS', libelle: 'Clients' },
+    { id: 'FOURNISSEURS', libelle: 'Fournisseurs' },
   ];
   readonly etapeAssistant = signal<EtapeAssistant>('TIERS');
   readonly pageResultatsAssistant = signal(1);
@@ -146,6 +148,65 @@ export class TresoreriePage implements OnInit {
   readonly apercuAssistant = signal<ApercuAssistant | null>(null);
   readonly detailAssistant = signal<LigneAssistant | null>(null);
   readonly menuOperation = signal<number | null>(null);
+  readonly compteursOperations = signal<CompteursOperations | null>(null);
+  readonly detailOperation = signal<DetailOperation | null>(null);
+  readonly choixImport = signal('dernier');
+  readonly statutsConsultation = {
+    RAPPROCHEE: 'Rapprochée', NON_RAPPROCHEE: 'Non rapprochée',
+    PARTIELLE: 'Partielle', TIERS_IDENTIFIE: 'Tiers identifié',
+  };
+  readonly colonnesOperations: Array<{ cle: OperationBancaireSortBy; libelle: string }> = [
+    { cle: 'dateOperation', libelle: 'Date opération' },
+    { cle: 'tiersReconnu', libelle: 'Tiers' },
+    { cle: 'numeroPieceAssociee', libelle: 'Pièce associée' },
+    { cle: 'natureOperation', libelle: 'Nature' },
+    { cle: 'montantSigne', libelle: 'Montant' },
+    { cle: 'statutConsultation', libelle: 'Statut' },
+  ];
+  readonly ambiguitesTiers = computed(() => this.apercuAssistant()?.lignes.filter(l =>
+    !l.bloquee && l.candidats.length > 0 && !l.candidats.some(c => c.sur)).length ?? 0);
+  readonly sansCorrespondanceTiers = computed(() => this.apercuAssistant()?.lignes.filter(l => !l.candidats.length).length ?? 0);
+  readonly aPropositionCertaine = computed(() => this.apercuAssistant()?.lignes.some(l =>
+    !l.bloquee && l.candidats.length === 1 && l.candidats[0].sur && !l.candidats[0].carte?.conflit) ?? false);
+
+  nomImportOperation(operation: OperationBancaire): string {
+    if (!operation.importReleveBancaireId) return 'Saisie manuelle';
+    const releve = this.imports().find(i => i.id === operation.importReleveBancaireId);
+    return releve ? releve.nomFichier : `Import n° ${operation.importReleveBancaireId}`;
+  }
+
+  readonly valeursStatutConsultation = Object.keys(this.statutsConsultation) as StatutConsultation[];
+
+  statutConsultation(op: OperationBancaire): StatutConsultation {
+    const rapproche = op.montantRapproche ?? 0;
+    const montant = Math.abs(op.sens === 'DEBIT' ? op.debit ?? op.montant : op.montant);
+    if (rapproche > 0) return rapproche >= montant ? 'RAPPROCHEE' : 'PARTIELLE';
+    return op.tiersId ? 'TIERS_IDENTIFIE' : 'NON_RAPPROCHEE';
+  }
+
+  pieceAssociee(op: OperationBancaire): string {
+    return op.numeroPieceAssociee || op.documentAssocieNumero || this.referencePieceHistorique(op) || '—';
+  }
+
+  referencePieceHistorique(piece: OperationBancaire | RapprochementBancaire): string {
+    if (piece.factureId) return `Facture n° ${piece.factureId}`;
+    if (piece.salaireId) return `Paie n° ${piece.salaireId}`;
+    return piece.pieceRapprochementId ? `Pièce n° ${piece.pieceRapprochementId}` : '';
+  }
+
+  private filtresConsultation(): FiltresOperations {
+    const choix = this.choixImport();
+    const importId = choix === 'tous' ? undefined : choix === 'dernier' ? String(this.imports()[0]?.id ?? 0) : choix;
+    return { ...this.filtresOperations(), importId };
+  }
+
+  changerImport(choix: string): void {
+    this.choixImport.set(choix);
+    this.pageOperations.set(1);
+    this.loading.set(true);
+    this.chargerOperations(() => this.loading.set(false));
+  }
+
   readonly operationConsultee = signal<OperationBancaire | null>(null);
   readonly reglesProposeesAssistant = signal<Record<number,{memoriser:boolean;motif:string;tiersId?:number}>>({});
   readonly choixAssistant = signal<Array<{ ligne: LigneAssistant; candidat: CandidatAssistant; choix: ChoixAssistant }>>([]);
@@ -170,11 +231,11 @@ export class TresoreriePage implements OnInit {
   private perimetreAssistant() {
     const id = this.operationAssistant();
     const operationIds = id ? [id] : this.porteeAssistant() === 'PAGE' ? this.operationsPage().map(o => o.id) : undefined;
-    return { ...this.filtresOperations(), operationIds };
+    return { ...this.filtresConsultation(), operationIds, consultation: true };
   }
 
   private cleAssistant(avecPage = true): string {
-    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.porteeAssistant(), this.operationAssistant(), avecPage ? this.perimetreAssistant() : this.filtresOperations()]);
+    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.porteeAssistant(), this.operationAssistant(), avecPage ? this.perimetreAssistant() : this.filtresConsultation()]);
   }
 
   ouvrirAssistant(operation?: OperationBancaire): void {
@@ -185,13 +246,13 @@ export class TresoreriePage implements OnInit {
     this.invaliderAssistant();
   }
 
-  private filtresAvantIdentification: {contexte:string;tiersReconnu?:string;typeTiersReconnu?:FiltresOperations['typeTiersReconnu']}|null=null;
   changerEtapeAssistant(etape: EtapeAssistant): void {
-    if (this.loading()) return;
-    const page=this.apercuAssistant()?this.pageResultatsAssistant():this.pageOperations();
-    if(etape==='TIERS'){this.operationAssistant.set(null);const {tiersReconnu,typeTiersReconnu,...compatibles}=this.filtresOperations();if(tiersReconnu || typeTiersReconnu)this.filtresAvantIdentification={contexte:this.cleContexteCartes(),tiersReconnu,typeTiersReconnu};this.filtresOperations.set(compatibles);}
-    else if(this.filtresAvantIdentification){if(this.filtresAvantIdentification.contexte===this.cleContexteCartes()){const {contexte,...filtres}=this.filtresAvantIdentification;this.filtresOperations.set({...this.filtresOperations(),...Object.fromEntries(Object.entries(filtres).filter(([,v])=>v!==undefined))});}this.filtresAvantIdentification=null;}
-    this.identification.set(null);this.etapeAssistant.set(etape); this.invaliderAssistant(); this.previsualiserAssistant(false,page);
+    if (this.loading() || (etape !== 'TIERS' && this.compteursOperations()?.sansTiers !== 0)) return;
+    this.operationAssistant.set(null);
+    this.porteeAssistant.set('FILTRES');
+    this.etapeAssistant.set(etape);
+    this.invaliderAssistant();
+    this.previsualiserAssistant();
   }
 
   naviguerAssistant(delta: number): void {
@@ -230,7 +291,7 @@ export class TresoreriePage implements OnInit {
   }
 
   private apercuDisponible(apercu: ApercuAssistant): ApercuAssistant {
-    const lignes=apercu.lignes.filter(l=>!this.operationAssistant() || l.operation.id===this.operationAssistant()).filter(l=>!l.operation.rapprochee && l.operation.statutRapprochement!=='RAPPROCHEE' && l.operation.statutRapprochement!=='IGNOREE')
+    const lignes=apercu.lignes.filter(l=>!this.operationAssistant() || l.operation.id===this.operationAssistant()).filter(l => this.etapeAssistant() === 'TIERS' || this.statutConsultation(l.operation) !== 'RAPPROCHEE' && l.operation.statutRapprochement !== 'IGNOREE')
       .filter(l=>this.etapeAssistant()!=='TIERS' || !l.operation.tiersId);
     return {...apercu,lignes,eligibles:lignes.filter(l=>!l.bloquee && l.candidats.length>0).length,
       propositions:lignes.reduce((n,l)=>n+l.candidats.length,0),anomalies:lignes.filter(l=>l.anomalies.length || l.candidats.some(c=>c.avertissements.length)).length,restantes:lignes.length};
@@ -272,11 +333,14 @@ export class TresoreriePage implements OnInit {
       this.choixAssistant.set(autresOperations);
       autres.splice(0,autres.length,...autresOperations);
     }
-    const uneOperation = ['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) || !candidat.sur;
+    const uneOperation = !candidat.sur;
     if (autres.some(s => (uneOperation || !s.candidat.sur) && s.choix.operationId !== ligne.operation.id)) {
       this.error.set('Cette proposition doit être confirmée individuellement.'); return;
     }
-    if ((this.etapeAssistant() === 'TIERS' || this.etapeAssistant() === 'NOTES_FRAIS') && autres.some(s => s.choix.operationId === ligne.operation.id)) {
+    if (autres.some(s => s.choix.operationId === ligne.operation.id
+      && (this.etapeAssistant() === 'TIERS' || this.etapeAssistant() === 'NOTES_FRAIS'
+        || candidat.cle.startsWith('C:') || s.candidat.cle.startsWith('C:')
+        || candidat.cle === 'CREATION' || s.candidat.cle === 'CREATION'))) {
       this.error.set('Choisissez une seule correspondance pour cette opération.'); return;
     }
     this.choixAssistant.set([...autres, { ligne, candidat, choix: { operationId: ligne.operation.id,
@@ -304,7 +368,7 @@ export class TresoreriePage implements OnInit {
       if (ligne.bloquee || !this.operationDisponible(ligne.operation) || ligne.candidats.length !== 1) continue;
       const sures = ligne.candidats.filter(c => c.sur && !c.carte?.conflit);
       if (sures.length === 1) this.selectionnerAssistant(ligne, sures[0], true);
-      if (['CLIENTS', 'SALAIRES'].includes(this.etapeAssistant()) && this.choixAssistant().length) break;
+      if (this.choixAssistant().length === 200) break;
     }
   }
 
@@ -319,7 +383,7 @@ export class TresoreriePage implements OnInit {
     const selections = this.choixAssistant();
     if (!selections.length) { this.error.set('Sélectionnez une proposition.'); return; }
     if (selections.length > 200) { this.error.set('Affinez le périmètre : 200 lignes maximum par confirmation.'); return; }
-    if (this.etapeAssistant() !== 'PIECES' && selections.some(s => s.candidat.avertissements.length && !s.choix.verifierJustificatif)) {
+    if (this.etapeAssistant() !== 'PIECES' && selections.some(s => s.candidat.cle !== 'CREATION' && s.candidat.avertissements.length && !s.choix.verifierJustificatif)) {
       this.error.set('Vérifiez explicitement les avertissements et justificatifs des lignes sélectionnées.'); return;
     }
     if (selections.some(s => s.candidat.typePiece !== 'TIERS' && (!(s.choix.montant > 0) || s.choix.montant > s.candidat.montantPropose))) {
@@ -328,7 +392,7 @@ export class TresoreriePage implements OnInit {
     for (const id of new Set(selections.map(s => s.choix.operationId))) {
       const lignes = selections.filter(s => s.choix.operationId === id);
       const operation = lignes[0].ligne.operation;
-      const plafond = operation.sens === 'DEBIT' ? operation.debit ?? Math.abs(operation.montant) : operation.credit ?? Math.abs(operation.montant);
+      const plafond = Math.max(0, Math.abs(this.montantSigne(operation)) - (operation.montantRapproche ?? 0));
       if (lignes.reduce((s,l) => s + l.choix.montant,0) > plafond + 0.000001) {
         this.error.set('La sélection dépasse le montant bancaire ; réduisez les affectations.'); return;
       }
@@ -349,14 +413,17 @@ export class TresoreriePage implements OnInit {
     this.loading.set(true); this.error.set(null); this.recapAssistant.set(null);
     this.api.confirmerAssistant(demande).subscribe({
       next: bilan => {
-        this.loading.set(false); if (contexte !== this.cleAssistant()) return;
+        if (contexte !== this.cleAssistant()) return;
         this.bilanAssistant.set(bilan);
         if (demande.etape === 'TIERS') this.tiersConfirmesAssistant.set(this.choixAssistant().filter(s => bilan.lignes.some(r => r.operationId === s.choix.operationId && r.statut === 'SUCCES'))
           .map(s => ({ id: s.choix.tiersId, nom: s.candidat.nomTiers, operation: s.choix.operationId, libelle:s.ligne.operation.libelle,memoriser:regles[s.choix.operationId]?.memoriser ?? false,motif:regles[s.choix.operationId]?.motif })));
         const selections = demande.selections.filter(s => bilan.lignes.some(r => r.operationId === s.operationId && r.statut === 'A_REPRENDRE'));
         this.repriseAssistant.set(selections.length ? { ...demande, selections } : null);
         this.contexteRepriseAssistant = contexte;
-        this.chargerOperations(() => { if (contexteVue===this.cleAssistant(false)) this.previsualiserAssistant(true); },true);
+        this.chargerOperations(() => {
+          this.loading.set(false);
+          if (contexteVue===this.cleAssistant(false)) this.previsualiserAssistant(true);
+        },true);
         this.api.dashboard().subscribe({ next: stats => this.dashboard.set(stats) });
         const memorisation=this.tiersConfirmesAssistant();
         if (demande.etape==='TIERS' && memorisation.length===1 && memorisation[0].memoriser && !bilan.refuses && !bilan.conflits && !bilan.aReprendre) {
@@ -399,8 +466,7 @@ export class TresoreriePage implements OnInit {
   }
 
   readonly identificationsCertaines = computed(()=>{
-    const visibles=new Set(this.operationsAffichees().map(o=>o.id));
-    return (this.apercuAssistant()?.lignes ?? []).filter(l=>visibles.has(l.operation.id) && l.operation.id!==this.identification()?.operationId && !l.bloquee && !l.operation.tiersId && this.operationDisponible(l.operation))
+    return (this.apercuAssistant()?.lignes ?? []).filter(l=>l.operation.id!==this.identification()?.operationId && !l.bloquee && !l.operation.tiersId)
       .flatMap(l=>{
         const candidats=l.candidats.filter(c=>c.sur && c.typePiece==='TIERS' && c.cle===`REGLE_BANCAIRE:${c.tiersId}`);
         return candidats.length===1 ? [{ligne:l,candidat:candidats[0]}] : [];
@@ -412,11 +478,21 @@ export class TresoreriePage implements OnInit {
     const certaines=this.identificationsCertaines();if(!certaines.length)return;
     const contexte=this.cleAssistant();this.loading.set(true);this.error.set(null);this.bilanAssistant.set(null);
     const demande:ConfirmationAssistant={etape:'TIERS',categorie:'CARTE',confirmation:true,
-      perimetre:{...this.filtresOperations(),operationIds:certaines.map(c=>c.ligne.operation.id)},
+      perimetre:this.perimetreAssistant(),
       selections:certaines.map(({ligne,candidat})=>({operationId:ligne.operation.id,candidatCle:candidat.cle,tiersId:candidat.tiersId,pieceId:null,
         montant:0,confirmerNature:false,verifierJustificatif:false,confirmerAffectation:false}))};
     try {
-      const bilan=await firstValueFrom(this.api.confirmerAssistant(demande));
+      const bilans: BilanAssistant[] = [];
+      for (let debut = 0; debut < demande.selections.length && contexte === this.cleAssistant(); debut += 200) {
+        bilans.push(await firstValueFrom(this.api.confirmerAssistant({
+          ...demande, selections: demande.selections.slice(debut, debut + 200),
+        })));
+      }
+      const bilan = bilans.reduce<BilanAssistant>((b, suivant) => ({
+        reussis: b.reussis + suivant.reussis, refuses: b.refuses + suivant.refuses,
+        conflits: b.conflits + suivant.conflits, aReprendre: b.aReprendre + suivant.aReprendre,
+        lignes: [...b.lignes, ...suivant.lignes],
+      }), { reussis: 0, refuses: 0, conflits: 0, aReprendre: 0, lignes: [] });
       if(contexte!==this.cleAssistant())return;
       this.bilanAssistant.set(bilan);
       const succes=new Map(certaines.filter(c=>bilan.lignes.some(r=>r.operationId===c.ligne.operation.id && r.statut==='SUCCES')).map(c=>[c.ligne.operation.id,c.candidat]));
@@ -428,12 +504,17 @@ export class TresoreriePage implements OnInit {
       if(succes.has(this.identification()?.operationId ?? 0))this.identification.set(null);
       this.choixAssistant.update(cs=>cs.filter(c=>!succes.has(c.choix.operationId)));
     }catch(e){if(contexte===this.cleAssistant())this.error.set('Identification non confirmée. Actualisez les propositions avant de reprendre. '+getHttpErrorMessage(e));}
-    finally{this.loading.set(false);}
+    finally {
+      if (contexte === this.cleAssistant()) this.chargerOperations(() => this.loading.set(false), true);
+      else this.loading.set(false);
+    }
   }
 
   readonly identification = signal<BrouillonIdentification|null>(null);
   readonly erreurIdentification = signal<string|null>(null);
   readonly rolesIdentification = signal<string[]>([]);
+  readonly naturesOrganisationIdentification = signal<string[]>([]);
+  readonly naturesPersonneIdentification = signal<string[]>([]);
   readonly doublonsIdentification = signal<TiersIdentification[]>([]);
   readonly reglesIdentification = signal<RegleBancaireIdentification[]>([]);
   readonly chargementIdentification = signal(false);
@@ -484,7 +565,7 @@ export class TresoreriePage implements OnInit {
   }
 
   ouvrirValidationTiers(ligne:LigneAssistant,tiersId?:number):void {
-    if(this.loading() || ligne.bloquee || !this.operationDisponible(ligne.operation) || ligne.operation.tiersId)return;
+    if(this.loading() || ligne.bloquee || ligne.operation.tiersId)return;
     const sequence=++this.sequenceIdentification,contexte=this.contexteIdentification();
     this.motifIdentificationModifie=false;
     this.detailAssistant.set(null);this.menuOperation.set(null);this.erreurIdentification.set(null);this.doublonsIdentification.set([]);
@@ -499,7 +580,7 @@ export class TresoreriePage implements OnInit {
     if(!motifReprise && this.motifDunAutreCandidat(motifPropose,id,ligne))motifPropose='';
     this.identification.set({operationId:ligne.operation.id,tiersId:id,nomTiers:candidat?.nomTiers ?? '',
       motif:motifPropose,nouveau:!id,
-      typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',categorieMarchand:'',
+      typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',nomCommercial:'',pieceRapprochementAutorisee:'non',actif:'oui',categorieMarchand:'',
       creationIncertaine:reprise?.incertain ?? false,tiersCree:!!reprise?.tiersId});
     this.chargementIdentification.set(true);
     this.api.reglesIdentification().subscribe({next:regles=>{
@@ -511,7 +592,21 @@ export class TresoreriePage implements OnInit {
     if(id && !candidat)this.api.lireTiersIdentification(id).subscribe({next:t=>{
       if(sequence===this.sequenceIdentification && contexte===this.contexteIdentification())this.identification.update(d=>d ? {...d,nomTiers:this.nomIdentification(t),motif:!motifReprise && !this.motifIdentificationModifie && d.motif===motifPropose ? this.proposerMotifBancaire(ligne.operation.libelle,this.nomIdentification(t)) : d.motif} : d);
     },error:e=>{if(sequence===this.sequenceIdentification)this.erreurIdentification.set(getHttpErrorMessage(e));}});
-    if(!id && !this.rolesIdentification().length)this.api.rolesIdentification().subscribe({next:r=>{if(contexte===this.contexteIdentification())this.rolesIdentification.set(r.filter(x=>x!=='FOURNISSEUR'));},error:e=>this.erreurIdentification.set(getHttpErrorMessage(e))});
+    if (!id) {
+      forkJoin({
+        roles: this.api.rolesIdentification(),
+        organisations: this.api.naturesIdentification('organisation'),
+        personnes: this.api.naturesIdentification('personne'),
+      }).subscribe({
+        next: ({ roles, organisations, personnes }) => {
+          if (contexte !== this.contexteIdentification()) return;
+          this.rolesIdentification.set(roles);
+          this.naturesOrganisationIdentification.set(organisations);
+          this.naturesPersonneIdentification.set(personnes);
+        },
+        error: e => { if (contexte === this.contexteIdentification()) this.erreurIdentification.set(getHttpErrorMessage(e)); },
+      });
+    }
   }
 
   choisirPropositionIdentification(ligne:LigneAssistant,candidat:CandidatAssistant):void {
@@ -557,23 +652,25 @@ export class TresoreriePage implements OnInit {
     this.loading.set(true);this.erreurIdentification.set(null);
     try {
       verifier();
+      if (!d.tiersId && d.actif === 'non') throw new Error('Activez le nouveau tiers pour l’associer à cette opération.');
       if(d.creationIncertaine && !d.tiersId)throw new Error('La création a pu réussir. Retrouvez et sélectionnez sa fiche avant de reprendre.');
-      const apercu=await firstValueFrom(this.api.previsualiserAssistant('TIERS','CARTE',{operationIds:[d.operationId]}));verifier();
+      const apercu=await firstValueFrom(this.api.previsualiserAssistant('TIERS','CARTE',{...this.filtresConsultation(),operationIds:[d.operationId]}));verifier();
       const ligne=apercu.lignes.find(l=>l.operation.id===d.operationId);
-      if(!ligne || ligne.bloquee || !this.operationDisponible(ligne.operation))throw new Error('Cette opération n’est plus disponible.');
+      if(!ligne || ligne.bloquee)throw new Error('Cette opération n’est plus disponible.');
       if(ligne.operation.tiersId && ligne.operation.tiersId!==d.tiersId)throw new Error('Cette opération possède déjà un autre tiers. Actualisez les propositions.');
       const regles=await firstValueFrom(this.api.reglesIdentification());verifier();
       let regle=this.verifierReglesIdentification(regles,d,ligne.operation.libelle);
       if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new Error('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
       if(!d.tiersId) {
-        if(!d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
+        const natures = d.typeTiers === 'ORGANISATION' ? this.naturesOrganisationIdentification() : this.naturesPersonneIdentification();
+        if(!natures.includes(d.nature) || !d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
         const nom=d.typeTiers==='ORGANISATION'?d.raisonSociale.trim():[d.prenom.trim(),d.nom.trim()].join(' ');
         const doublons=await firstValueFrom(this.api.listerTiersIdentification(nom));verifier();
         if(doublons.length){this.doublonsIdentification.set(doublons);throw new Error('Une fiche peut déjà correspondre. Sélectionnez-la ou précisez l’identité.');}
         this.sauvegarderRepriseIdentification(d,true);this.identification.update(x=>x?{...x,creationIncertaine:true}:x);
         let tiers:TiersIdentification;
-        try {tiers=await firstValueFrom(this.api.creerTiersIdentification({typeTiers:d.typeTiers,roles:[d.role],
-          ...(d.typeTiers==='ORGANISATION'?{raisonSociale:d.raisonSociale.trim(),natureOrganisation:d.role==='BANQUE'?'BANQUE':'ENTREPRISE'}:{nom:d.nom.trim(),prenom:d.prenom.trim(),naturePersonne:d.role==='SALARIE'?'SALARIE_INTERNE':'PARTICULIER'}),
+        try {tiers=await firstValueFrom(this.api.creerTiersIdentification({typeTiers:d.typeTiers,roles:[d.role], actif: d.actif === 'oui', pieceRapprochementAutorisee: d.pieceRapprochementAutorisee === 'oui',
+          ...(d.typeTiers==='ORGANISATION'?{raisonSociale:d.raisonSociale.trim(),natureOrganisation:d.nature,nomCommercial:d.nomCommercial.trim() || d.raisonSociale.trim()}:{nom:d.nom.trim(),prenom:d.prenom.trim(),naturePersonne:d.nature}),
           ...(d.role==='MARCHAND'?{categorieMarchand:d.categorieMarchand}:{}),}));}
         catch(e){if(e instanceof HttpErrorResponse && [400,401,403,404,422].includes(e.status)){this.sauvegarderRepriseIdentification(d,false);this.identification.update(x=>x?{...x,creationIncertaine:false}:x);}throw e;}
         // Conserver l’ID avant tout autre appel, même si le contexte vient de changer.
@@ -591,7 +688,7 @@ export class TresoreriePage implements OnInit {
         if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new Error('La règle enregistrée doit être vérifiée avant association.');
       }
       if(ligne.operation.tiersId!==d.tiersId) {
-        const bilan=await firstValueFrom(this.api.confirmerAssistant({etape:'TIERS',categorie:'CARTE',perimetre:{operationIds:[d.operationId]},confirmation:true,
+        const bilan=await firstValueFrom(this.api.confirmerAssistant({etape:'TIERS',categorie:'CARTE',perimetre:{...this.filtresConsultation(),operationIds:[d.operationId]},confirmation:true,
           selections:[{operationId:d.operationId,candidatCle:`MANUEL:${d.tiersId}`,pieceId:null,tiersId:d.tiersId!,montant:0,confirmerNature:false,verifierJustificatif:true,confirmerAffectation:false}]}));verifier();
         if(bilan.reussis!==1 || !bilan.lignes.some(l=>l.operationId===d.operationId && l.statut==='SUCCES'))throw new Error(bilan.lignes[0]?.message || 'Association non confirmée. Reprenez avec ce même tiers.');
       }
@@ -601,6 +698,7 @@ export class TresoreriePage implements OnInit {
       this.pageResultatsAssistant.set(Math.min(this.pageResultatsAssistant(),this.totalPagesResultatsAssistant()));
       this.identification.set(null);this.choixAssistant.set([]);this.menuOperation.set(null);
       sessionStorage.removeItem(this.cleRepriseIdentification(d.operationId));
+      this.chargerOperations(undefined, true);
     }catch(e){this.erreurIdentification.set(e instanceof Error && !('status' in e)?e.message:getHttpErrorMessage(e));}
     finally{this.loading.set(false);}
   }
@@ -717,12 +815,12 @@ export class TresoreriePage implements OnInit {
   readonly totalPagesResultatsAssistant = computed(() => Math.max(1,Math.ceil((this.apercuAssistant()?.lignes.length ?? 0)/this.taillePageOperations())));
   readonly operationsAffichees = computed(() => {
     const apercu=this.apercuAssistant();
-    if (!apercu) return this.etapeAssistant()==='TIERS' ? this.operationsPage().filter(o=>!o.tiersId) : this.operationsPage();
+    if (!apercu) return this.operationsPage();
     const debut=(this.pageResultatsAssistant()-1)*this.taillePageOperations();
     const tri=this.triOperations();
-    const cle=(tri.sortBy==='compte' ? 'compteBancaireLibelle' : tri.sortBy) as keyof OperationBancaire;
+    const cle=tri.sortBy as keyof OperationBancaire;
     const operations=apercu.lignes.map(l=>l.operation).sort((a,b)=>{
-      const gauche=tri.sortBy==='montant' ? this.montantSigne(a) : a[cle] ?? '';const droite=tri.sortBy==='montant' ? this.montantSigne(b) : b[cle] ?? '';
+      const gauche=tri.sortBy==='montantSigne' ? this.montantSigne(a) : a[cle] ?? '';const droite=tri.sortBy==='montantSigne' ? this.montantSigne(b) : b[cle] ?? '';
       const ordre=typeof gauche==='number' && typeof droite==='number' ? gauche-droite : String(gauche).localeCompare(String(droite),'fr',{numeric:true});
       return tri.sortDirection==='DESC' ? -ordre : ordre;
     });
@@ -918,10 +1016,20 @@ export class TresoreriePage implements OnInit {
         this.api.imports().subscribe({ next: (data) => this.imports.set(data), error: (e) => this.error.set(getHttpErrorMessage(e)), complete: fin });
         break;
       case 'operations':
-        this.chargerOperations(() => {
-          fin();
-          this.invaliderAssistant();
-          this.previsualiserAssistant();
+        this.compteursOperations.set(null);
+        this.operations.set([]);
+        this.invaliderAssistant();
+        const contexteImport = this.cleContexteCartes();
+        this.api.imports().subscribe({
+          next: imports => {
+            if (this.onglet() !== 'operations' || contexteImport !== this.cleContexteCartes()) return;
+            this.imports.set([...imports].sort((a, b) => b.dateImport.localeCompare(a.dateImport) || b.id - a.id));
+            if (!['dernier', 'tous'].includes(this.choixImport()) && !imports.some(i => String(i.id) === this.choixImport())) {
+              this.choixImport.set('dernier');
+            }
+            this.chargerOperations(fin);
+          },
+          error: e => { if (contexteImport === this.cleContexteCartes()) { this.error.set(getHttpErrorMessage(e)); fin(); } },
         });
         break;
       case 'previsionnel':
@@ -1046,19 +1154,34 @@ export class TresoreriePage implements OnInit {
     this.changerOnglet('operations');
   }
 
+  private sequenceOperations = 0;
+
   chargerOperations(fin?: () => void, conserverBilan = false): void {
-    if (!conserverBilan) this.invaliderAssistant();
-    let pageCorrigee=false;
-    this.api.operations(this.filtresOperations(), this.parametresOperations()).subscribe({
-      next: (data) => {
+    if (!conserverBilan) {
+      this.invaliderAssistant();
+      this.error.set(null);
+    }
+    let pageCorrigee = false;
+    const sequence = ++this.sequenceOperations;
+    const contexte = this.cleContexteCartes();
+    const consultation = this.onglet() === 'operations';
+    const filtres = consultation ? this.filtresConsultation() : this.filtresOperations();
+    if (consultation) this.compteursOperations.set(null);
+    forkJoin({
+      data: this.api.operations(filtres, this.parametresOperations()),
+      ...(consultation ? { compteurs: this.api.compteursOperations(filtres) } : {}),
+    }).subscribe({
+      next: ({ data, compteurs }) => {
+        if (sequence !== this.sequenceOperations || contexte !== this.cleContexteCartes()) return;
+        if (compteurs) this.compteursOperations.set(compteurs);
         this.appliquerPageOperations(data);
         if (this.pageOperations() > this.totalPagesOperations()) {
           pageCorrigee=true;this.pageOperations.set(this.totalPagesOperations());
           this.chargerOperations(fin,conserverBilan);
         }
       },
-      error: (e) => {this.error.set(getHttpErrorMessage(e));this.loading.set(false);},
-      complete: () => {if (!pageCorrigee) fin?.();},
+      error: (e) => { if (sequence === this.sequenceOperations && contexte === this.cleContexteCartes()) { this.error.set(getHttpErrorMessage(e)); this.loading.set(false); } },
+      complete: () => { if (sequence === this.sequenceOperations && contexte === this.cleContexteCartes() && !pageCorrigee) fin?.(); },
     });
   }
 
@@ -1082,7 +1205,6 @@ export class TresoreriePage implements OnInit {
       sortBy,
       sortDirection: triCourant.sortBy === sortBy && triCourant.sortDirection === 'DESC' ? 'ASC' : 'DESC',
     });
-    if (this.apercuAssistant()) { this.pageResultatsAssistant.set(1); return; }
     this.pageOperations.set(1);
     this.loading.set(true);
     this.chargerOperations(() => this.loading.set(false));
@@ -1105,6 +1227,7 @@ export class TresoreriePage implements OnInit {
   }
 
   reinitialiserFiltresOperations(): void {
+    this.choixImport.set('dernier');
     this.filtresOperations.set({});
     this.pageOperations.set(1);
     this.loading.set(true);
@@ -1602,6 +1725,13 @@ export class TresoreriePage implements OnInit {
 
   voirOperation(operation: OperationBancaire): void {
     this.detailAssistant.set(null);this.recapAssistant.set(null);this.menuOperation.set(null);this.operationConsultee.set(operation);
+    this.detailOperation.set(null);
+    this.api.consulterOperation(operation.id).subscribe({
+      next: detail => {
+        if (this.operationConsultee() === operation) this.detailOperation.set(detail);
+      },
+      error: e => { if (this.operationConsultee() === operation) this.error.set(getHttpErrorMessage(e)); },
+    });
   }
 
   nouvelleOperation(): void {

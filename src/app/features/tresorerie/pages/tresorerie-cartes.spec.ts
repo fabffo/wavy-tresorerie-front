@@ -151,7 +151,7 @@ describe('Propositions carte dans le rapprochement bancaire', () => {
     chargerPropositions([sure]);page.changerEtapeAssistant('NOTES_FRAIS');fixture.detectChanges();
     expect(html.querySelectorAll('.operations-table')).toHaveLength(1);
     expect(html.textContent).not.toContain('Assistant de rapprochement');
-    expect(html.querySelectorAll('[aria-label="Étapes du rapprochement"] button')).toHaveLength(6);
+    expect(html.querySelectorAll('[aria-label="Traitements bancaires"] button')).toHaveLength(4);
     expect(api.confirmerCartes).not.toHaveBeenCalled();
     page.changerEtapeAssistant('TIERS');fixture.detectChanges();expect(html.querySelector('.operations-table')).not.toBeNull();
   });

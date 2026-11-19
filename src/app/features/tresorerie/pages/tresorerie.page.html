@@ -19,7 +19,7 @@
     <div class="alert alert-info">{{ message() }}</div>
   }
 
-  @if (dashboard(); as stats) {
+  @if (onglet() !== 'operations' ? dashboard() : null; as stats) {
     <div class="metrics">
       <article>
         <span>Solde total</span>
@@ -43,7 +43,9 @@
   <section class="panel">
     <div class="panel-header">
       <h2>{{ titre() }}</h2>
-      @if (loading()) {
+      @if (onglet() === 'operations') {
+        <button type="button" class="primary" [disabled]="loading()" (click)="nouvelleOperation()">Nouvelle transaction</button>
+      } @else if (loading()) {
         <span>Chargement...</span>
       }
     </div>
@@ -270,61 +272,56 @@
         </table>
       }
       @case ('operations') {
-        <nav aria-label="Étapes du rapprochement" class="assistant-etapes">
-          @for (etape of etapesAssistant; track etape.id; let i = $index) {
-            <button type="button" [disabled]="loading()" [attr.aria-current]="etapeAssistant() === etape.id ? 'step' : null"
-              (click)="changerEtapeAssistant(etape.id)">{{ i + 1 }}. {{ etape.libelle }}</button>
-          }
-        </nav>
         <div class="operations-tools">
+          <label>Import bancaire
+            <select [value]="choixImport()" [disabled]="loading()" (change)="changerImport($any($event.target).value)">
+              <option value="dernier">Dernier import</option>
+              <option value="tous">Tous les imports</option>
+              @for (releve of imports(); track releve.id) {
+                <option [value]="releve.id">{{ releve.nomFichier }} · {{ releve.dateImport.slice(0, 10) }} · {{ releve.compteBancaireLibelle }}</option>
+              }
+            </select>
+          </label>
           <div class="filters">
-            <label>
-              Tiers reconnu
-              <input type="search" [disabled]="etapeAssistant() === 'TIERS'" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)">
+            <label>Tiers
+              <input type="search" placeholder="Tous" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)" />
             </label>
-            <label>
-              Type tiers
-              <select [disabled]="etapeAssistant() === 'TIERS'" [value]="filtresOperations().typeTiersReconnu || ''" (change)="filtrerOperations('typeTiersReconnu', $any($event.target).value)">
-                <option value="">Tous</option>
-                @for (type of typesTiers; track type) {
-                  <option [value]="type">{{ type }}</option>
-                }
-              </select>
-            </label>
-            <label>
-              Nature opération
+            <label>Nature
               <select [value]="filtresOperations().natureOperation || ''" (change)="filtrerOperations('natureOperation', $any($event.target).value)">
                 <option value="">Toutes</option>
-                @for (nature of naturesOperation; track nature) {
-                  <option [value]="nature">{{ libelleNature(nature) }}</option>
-                }
+                @for (nature of naturesOperation; track nature) { <option [value]="nature">{{ libelleNature(nature) }}</option> }
               </select>
             </label>
-            <label>
-              Statut classification
-              <select [value]="filtresOperations().statutClassification || ''" (change)="filtrerOperations('statutClassification', $any($event.target).value)">
+            <label>Statut
+              <select [value]="filtresOperations().statutConsultation || ''" (change)="filtrerOperations('statutConsultation', $any($event.target).value)">
                 <option value="">Tous</option>
-                @for (statut of statutsClassification; track statut) {
-                  <option [value]="statut">{{ libelleStatutClassification(statut) }}</option>
-                }
+                @for (statut of valeursStatutConsultation; track statut) { <option [value]="statut">{{ statutsConsultation[statut] }}</option> }
               </select>
             </label>
-            <label>
-              Statut rapprochement
-              <select [value]="filtresOperations().statutRapprochement || ''" (change)="filtrerOperations('statutRapprochement', $any($event.target).value)">
-                <option value="">Tous</option>
-                @for (statut of statutsRapprochement; track statut) {
-                  <option [value]="statut">{{ statut }}</option>
-                }
-              </select>
-            </label>
-          </div>
-          <div class="actions">
-            <button type="button" class="primary" (click)="nouvelleOperation()">Nouvelle transaction</button>
-            <button type="button" (click)="reinitialiserFiltresOperations()">Réinitialiser</button>
-
           </div>
         </div>
+        @if (compteursOperations(); as compteurs) {
+          <div class="metrics m-3" aria-live="polite">
+            <article><span>Total</span><strong>{{ compteurs.total }}</strong></article>
+            <article><span>Rapprochées</span><strong>{{ compteurs.rapprochees }}</strong></article>
+            <article><span>Non rapprochées</span><strong>{{ compteurs.nonRapprochees }}</strong></article>
+            <article><span>Partielles</span><strong>{{ compteurs.partielles }}</strong></article>
+            <article><span>Tiers identifié</span><strong>{{ compteurs.tiersIdentifies }}</strong></article>
+          </div>
+          @if (compteurs.sansTiers) {
+            <p class="mx-3">{{ compteurs.sansTiers }} opérations restent à identifier. Terminez l’identification des tiers avant de lancer les rapprochements.</p>
+          } @else {
+            <p class="mx-3">Tous les tiers sont identifiés. Vous pouvez lancer les rapprochements.</p>
+          }
+        }
+        <h3 class="mx-3">Traitements</h3>
+        <nav aria-label="Traitements bancaires" class="assistant-etapes mx-3">
+          @for (etape of etapesAssistant; track etape.id) {
+            <button type="button" [disabled]="loading() || (etape.id !== 'TIERS' && compteursOperations()?.sansTiers !== 0)"
+              [attr.aria-pressed]="apercuAssistant() && etapeAssistant() === etape.id ? 'true' : 'false'"
+              (click)="changerEtapeAssistant(etape.id)">{{ etape.libelle }}</button>
+          }
+        </nav>
         @if (modeOperation() === 'creation' || modeOperation() === 'modification') {
           <form class="operation-form" [formGroup]="formulaireOperation" (ngSubmit)="enregistrerOperation()">
             <h3>{{ modeOperation() === 'modification' ? 'Modifier la transaction' : 'Nouvelle transaction' }}</h3>
@@ -435,37 +432,21 @@
             </div>
           </form>
         }
-        <div class="bank-toolbar">
-          @if (operationAssistant(); as id) {
-            <span>Opération {{ id }}</span><button type="button" [disabled]="loading()" (click)="revenirPerimetreFiltre()">Toutes les opérations filtrées</button>
-          } @else {
-            <label>Analyser <select [value]="porteeAssistant()" [disabled]="loading()" (change)="porteeAssistant.set($any($event.target).value); invaliderAssistant(); previsualiserAssistant()">
-              <option value="FILTRES">Toutes les opérations filtrées</option><option value="PAGE">Page bancaire courante</option>
-            </select></label>
-          }
-          @if (etapeAssistant() === 'NOTES_FRAIS') {
-            <label>Pièces <select [value]="categorieAssistant()" [disabled]="loading()" (change)="categorieAssistant.set($any($event.target).value); invaliderAssistant(); previsualiserAssistant()">
-              <option value="CARTE">Carte entreprise</option><option value="REMBOURSEMENT">Remboursements de bénéficiaires</option>
-            </select></label>
-          }
-          <button type="button" [disabled]="loading()" (click)="previsualiserAssistant()">Actualiser les propositions</button>
-          @if (apercuAssistant(); as apercu) {
-            <span aria-live="polite">{{ apercu.lignes.length }} {{ etapeAssistant() === 'TIERS' ? 'opération(s) restant à identifier' : 'opération(s)' }} · {{ apercu.propositions }} proposition(s) · {{ apercu.anomalies }} anomalie(s)</span>
+        @if (apercuAssistant(); as apercu) {
+          <div class="bank-toolbar">
             @if (etapeAssistant() === 'TIERS') {
-              <button type="button" class="primary" [disabled]="loading() || !identificationsCertaines().length" (click)="identifierAutomatiquement()">Identifier automatiquement ({{ identificationsCertaines().length }})</button>
-              <span>Règles certaines de cette page ; aucun paiement.</span>
-              <span>Choisissez un tiers par opération ; les correspondances multiples restent à examiner.</span>
-            } @else if (etapeAssistant() === 'PIECES') {
-              <button type="button" class="primary" [disabled]="loading() || !apercu.eligibles" (click)="preparerAssistant(true)">Traiter les pièces autorisées ({{ apercu.eligibles }})</button>
+              <span aria-live="polite">{{ compteursOperations()?.sansTiers ?? apercu.lignes.length }} sans tiers · {{ identificationsCertaines().length }} certaines · {{ ambiguitesTiers() }} à choisir · {{ sansCorrespondanceTiers() }} sans correspondance</span>
+              <button type="button" class="primary" [disabled]="loading() || !identificationsCertaines().length" (click)="identifierAutomatiquement()">Appliquer les identifications certaines</button>
             } @else {
-              <button type="button" [disabled]="loading() || !apercu.eligibles" (click)="selectionnerSuresAssistant()">Sélectionner les propositions sûres</button>
+              <span aria-live="polite">{{ apercu.lignes.length }} opération(s) · {{ apercu.propositions }} proposition(s) · {{ apercu.anomalies }} anomalie(s)</span>
+              <button type="button" [disabled]="loading() || !aPropositionCertaine()" (click)="preparerAssistant(true)">Vérifier les propositions certaines</button>
               @if (choixAssistant().length) {
                 <button type="button" class="primary" [disabled]="loading()" (click)="preparerAssistant()">Vérifier la sélection ({{ choixAssistant().length }})</button>
-                <button type="button" [disabled]="loading()" (click)="choixAssistant.set([]); recapAssistant.set(null)">Désélectionner</button>
               }
             }
-          }
-        </div>
+            <button type="button" [disabled]="loading()" (click)="revenirOperationsFiltrees()">Fermer les propositions</button>
+          </div>
+        }
         @if (bilanAssistant(); as bilan) {
           <details class="bank-result" open><summary>{{ bilan.reussis }} réussi(s), {{ bilan.refuses }} refusé(s), {{ bilan.conflits }} conflit(s), {{ bilan.aReprendre }} à reprendre</summary>
             <ul>@for (r of bilan.lignes; track $index) { <li>Opération {{ r.operationId }} : {{ r.statut }} — {{ r.message }}</li> }</ul>
@@ -475,37 +456,28 @@
           </details>
         }
         @if (repriseAssistant()) { <button type="button" [disabled]="loading()" (click)="preparerRepriseAssistant()">Reprendre les lignes non confirmées</button> }
-        <div class="table-scroll-container">
-          <table class="operations-table" aria-label="Opérations bancaires">
-            <thead><tr>
-              <th><button type="button" class="sort-button" (click)="trierOperations('dateOperation')">Date opération <span>{{ indicateurTriOperations('dateOperation') }}</span></button></th>
-              <th><button type="button" class="sort-button" (click)="trierOperations('libelle')">Libellé <span>{{ indicateurTriOperations('libelle') }}</span></button></th>
-              <th><button type="button" class="sort-button" (click)="trierOperations('compte')">Compte <span>{{ indicateurTriOperations('compte') }}</span></button></th>
-              <th class="right"><button type="button" class="sort-button" (click)="trierOperations('montant')">Montant <span>{{ indicateurTriOperations('montant') }}</span></button></th>
-              <th><button type="button" class="sort-button" (click)="trierOperations('tiersReconnu')">Tiers <span>{{ indicateurTriOperations('tiersReconnu') }}</span></button></th>
-              <th><button type="button" class="sort-button" (click)="trierOperations('statutRapprochement')">Statut rapprochement <span>{{ indicateurTriOperations('statutRapprochement') }}</span></button></th>
-              <th>Proposition / Actions</th>
-            </tr></thead>
-            <tbody>
-              @for (operation of operationsAffichees(); track operation.id) {
-                <tr>
-                  <td>{{ operation.dateOperation }}</td><td>{{ operation.libelle }}</td><td>{{ operation.compteBancaireLibelle }}</td>
-                  <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
-                  <td>{{ operation.tiersReconnu || 'Non identifié' }}</td><td>{{ operation.statutRapprochement }}</td>
-                  <td class="bank-proposition">
+        @if (apercuAssistant()) {
+          <section aria-label="Propositions de traitement" class="d-grid gap-2 my-3">
+            @for (operation of operationsAffichees(); track operation.id) {
+              <article class="bank-proposition border rounded p-3">
+                <h4>{{ operation.dateOperation }} · {{ operation.libelle }} · {{ montant(montantSigne(operation)) }}</h4>
                     @if (ligneAssistant(operation.id); as ligne) {
-                      @if (propositionSure(ligne); as candidat) {
-                        <label [class.bank-tier-choice]="etapeAssistant() === 'TIERS'"><input [value]="candidat.tiersId" [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + operation.id" [checked]="etapeAssistant() === 'TIERS' ? identification()?.operationId === operation.id && identification()?.tiersId === candidat.tiersId : estSelectionAssistant(ligne,candidat)" [disabled]="loading()" (change)="etapeAssistant() === 'TIERS' ? choisirPropositionIdentification(ligne,candidat) : selectionnerAssistant(ligne,candidat,$any($event.target).checked)" /><span>{{ candidat.numeroPiece || candidat.nomTiers }}</span></label>@if(etapeAssistant() === 'TIERS'){<small>Règle bancaire reconnue — choix modifiable</small>}
-                      } @else {
-                        @for (c of (etapeAssistant() === 'TIERS' ? ligne.candidats : ligne.candidats.slice(0,2)); track c.cle) {
-                          @if(etapeAssistant() === 'TIERS') {
-                            <label class="bank-tier-choice"><input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId" [disabled]="loading() || ligne.bloquee" [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId" (change)="choisirPropositionIdentification(ligne,c)" /><span>{{ c.nomTiers }} @if(c.sur && c.cle.startsWith('REGLE_BANCAIRE:')){<em>— règle bancaire unique</em>}</span></label>
-                          } @else { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
+                      @if (etapeAssistant() === 'TIERS') {
+                        @for (c of ligne.candidats; track c.cle) {
+                          <label class="bank-tier-choice">
+                            <input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId"
+                              [disabled]="loading() || ligne.bloquee"
+                              [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId"
+                              (change)="choisirPropositionIdentification(ligne,c)" />
+                            <span>{{ c.nomTiers }} @if (c.sur) { <em>· règle bancaire certaine</em> }</span>
+                          </label>
                         }
-                        @if (etapeAssistant() !== 'TIERS' && ligne.candidats.length === 1 && !ligne.candidats[0].sur) { <strong>À vérifier avant confirmation</strong> }
-                        @if (ligne.candidats.length > 1) { <strong>Plusieurs correspondances : choix requis</strong> }
-                        @if (!ligne.candidats.length && !operation.rapprochee) { <span>Aucune correspondance</span> }
+                      } @else {
+                        @for (c of ligne.candidats.slice(0, 2); track c.cle) {
+                          <div>{{ c.numeroPiece || c.nomTiers }} · {{ montant(c.montantPropose) }}</div>
+                        }
                       }
+                      @if (!ligne.candidats.length) { <span>Aucune correspondance</span> }
                       @if(etapeAssistant() === 'TIERS') { @if(ligne.bloquee){<span>Opération indisponible pour l’identification.</span>} }
                       @else { @for (anomalie of ligne.anomalies.slice(0,2); track anomalie) { <div class="warning">{{ anomalie }}</div> } }
                     }
@@ -527,13 +499,34 @@
                                 }
                               }
                               <button type="button" [disabled]="loading()" (click)="modifierIdentification('raisonSociale',''); modifierIdentification('nom',''); modifierIdentification('prenom','')">Saisie libre</button>
-                              <label>Type <select [value]="d.typeTiers" [disabled]="loading()" (change)="modifierIdentification('typeTiers',$any($event.target).value)"><option value="ORGANISATION">Organisation</option><option value="PERSONNE_PHYSIQUE">Personne</option></select></label>
+                              <label>Type <select [value]="d.typeTiers" [disabled]="loading()" (change)="modifierIdentification('typeTiers',$any($event.target).value); modifierIdentification('nature','')"><option value="ORGANISATION">Organisation</option><option value="PERSONNE_PHYSIQUE">Personne</option></select></label>
                               @if(d.typeTiers === 'ORGANISATION') {
                                 <label>Raison sociale <input [value]="d.raisonSociale" [disabled]="loading()" (input)="modifierIdentification('raisonSociale',$any($event.target).value)" /></label>
                               } @else {
                                 <label>Nom <input [value]="d.nom" [disabled]="loading()" (input)="modifierIdentification('nom',$any($event.target).value)" /></label>
                                 <label>Prénom <input [value]="d.prenom" [disabled]="loading()" (input)="modifierIdentification('prenom',$any($event.target).value)" /></label>
                               }
+                              <label>Nature du tiers
+                                <select [value]="d.nature" [disabled]="loading()" (change)="modifierIdentification('nature',$any($event.target).value)">
+                                  <option value="">Choisir</option>
+                                  @for (nature of (d.typeTiers === 'ORGANISATION' ? naturesOrganisationIdentification() : naturesPersonneIdentification()); track nature) {
+                                    <option [value]="nature">{{ nature }}</option>
+                                  }
+                                </select>
+                              </label>
+                              @if (d.typeTiers === 'ORGANISATION') {
+                                <label>Nom commercial <input [value]="d.nomCommercial" [placeholder]="d.raisonSociale" [disabled]="loading()" (input)="modifierIdentification('nomCommercial',$any($event.target).value)" /></label>
+                              }
+                              <label>Pièce de rapprochement autorisée
+                                <select [value]="d.pieceRapprochementAutorisee" [disabled]="loading()" (change)="modifierIdentification('pieceRapprochementAutorisee',$any($event.target).value)">
+                                  <option value="non">Non</option><option value="oui">Oui</option>
+                                </select>
+                              </label>
+                              <label>Actif
+                                <select [value]="d.actif" [disabled]="loading()" (change)="modifierIdentification('actif',$any($event.target).value)">
+                                  <option value="oui">Oui</option><option value="non">Non</option>
+                                </select>
+                              </label>
                               <label>Rôle <select [value]="d.role" [disabled]="loading()" (change)="modifierIdentification('role',$any($event.target).value)"><option value="">Choisir</option>@for(role of rolesIdentification(); track role){<option [value]="role">{{ role }}</option>}</select></label>
                               @if(d.role === 'MARCHAND') {
                                 <label>Catégorie marchand <select [value]="d.categorieMarchand" [disabled]="loading()" (change)="modifierIdentification('categorieMarchand',$any($event.target).value)"><option value="">Choisir</option><option value="AUTRE">Autre</option><option value="INFORMATIQUE">Informatique</option><option value="RESTAURANT">Restaurant</option><option value="TRANSPORT_PUBLIC">Transport public</option></select></label>
@@ -553,42 +546,19 @@
                         </section>
                       }
                     }
-                    <button type="button" [disabled]="loading()" aria-haspopup="menu" [attr.aria-expanded]="menuOperation() === operation.id" [attr.aria-controls]="'actions-' + operation.id" (click)="basculerActions(operation.id)">Actions</button>
-                    @if (menuOperation() === operation.id) {
-                      <div class="bank-row-menu" role="menu" [id]="'actions-' + operation.id" (keydown.escape)="menuOperation.set(null)">
-                        <button type="button" role="menuitem" (click)="voirOperation(operation); menuOperation.set(null)">Voir</button>
-                        @if (operationModifiable(operation)) {
-                          <button type="button" role="menuitem" (click)="modifierOperation(operation); menuOperation.set(null)">Modifier</button>
-                          <button type="button" role="menuitem" (click)="identifierTiersOperation(operation)">{{ operation.tiersId ? 'Corriger le tiers' : 'Identifier le tiers' }}</button>
-                        }
-                        @if (operationDisponible(operation)) {
-                          @if (ligneAssistant(operation.id); as ligne) {
-                            @if (ligne.candidats.length || etapeAssistant() === 'TIERS') {
-                              <button type="button" role="menuitem" (click)="examinerOperation(ligne)">Examiner une proposition</button>
-                            }
-                            @if(etapeAssistant() === 'TIERS' && choixAssistant().length === 1 && choixAssistant()[0].choix.operationId === operation.id) {
-                              <button type="button" role="menuitem" (click)="preparerAssistant()">Choisir ce tiers</button>
-                            } @else if (propositionSure(ligne); as candidat) {
-                              <button type="button" role="menuitem" (click)="preparerLigne(ligne,candidat)">{{ etapeAssistant() === 'TIERS' ? 'Choisir ce tiers' : 'Confirmer un rapprochement' }}</button>
-                            }
-                            @if (etapeAssistant() === 'TIERS' && !ligne.bloquee) {
-                              <button type="button" role="menuitem" (click)="creerTiersPourOperation(ligne)">Créer un tiers</button>
-                            }
-                          } @else {
-                            <button type="button" role="menuitem" (click)="examinerSansApercu(operation)">Rechercher des propositions</button>
-                          }
-                        }
-                        @if (operationModifiable(operation) && operation.statutRapprochement === 'NON_RAPPROCHEE') {
-                          <button type="button" role="menuitem" (click)="supprimerOperation(operation); menuOperation.set(null)">Supprimer</button>
-                        }
-                      </div>
-                    }
-                  </td>
-                </tr>
-              } @empty { <tr><td colspan="7">{{ etapeAssistant() === 'TIERS' && apercuAssistant() ? 'Toutes les opérations affichées ont un tiers identifié.' : 'Aucune opération disponible pour cette étape et ces filtres.' }}</td></tr> }
-            </tbody>
-          </table>
-        </div>
+                @if (ligneAssistant(operation.id); as ligne) {
+                  @if (!ligne.bloquee && etapeAssistant() === 'TIERS') {
+                    <button type="button" [disabled]="loading()" (click)="examinerOperation(ligne)">{{ ligne.candidats.length ? 'Aucun de ces tiers' : 'Rechercher ou créer un tiers' }}</button>
+                  } @else if (etapeAssistant() !== 'TIERS' && ligne.candidats.length && !ligne.bloquee) {
+                    <button type="button" [disabled]="loading()" (click)="examinerOperation(ligne)">Examiner les propositions</button>
+                  } @else {
+                    <button type="button" (click)="voirOperation(operation)">Voir l’opération</button>
+                  }
+                }
+              </article>
+            }
+          </section>
+        }
         @if (apercuAssistant(); as apercu) {
           <div class="table-pagination" aria-label="Pagination des résultats de l’étape">
             <label>Lignes par page <select [value]="taillePageOperations()" (change)="changerTailleResultats($any($event.target).value)">
@@ -599,7 +569,36 @@
             <span>Page {{ pageResultatsAssistant() }} / {{ totalPagesResultatsAssistant() }}</span>
             <button type="button" [disabled]="pageResultatsAssistant() >= totalPagesResultatsAssistant()" (click)="pageResultatsAssistant.update(suivantePage)">Suivant</button>
           </div>
-        } @else {
+        }
+        <div class="d-flex justify-content-between align-items-center border-top mt-4 py-3">
+          <h3>Liste des opérations</h3>
+          <button type="button" [disabled]="loading()" (click)="reinitialiserFiltresOperations()">Réinitialiser</button>
+        </div>
+        <div class="table-scroll-container">
+          <table class="operations-table" aria-label="Opérations bancaires">
+            <thead><tr>
+              @for (colonne of colonnesOperations; track colonne.cle) {
+                <th [class.right]="colonne.cle === 'montantSigne'" [attr.aria-sort]="triOperations().sortBy === colonne.cle ? (triOperations().sortDirection === 'ASC' ? 'ascending' : 'descending') : null">
+                  <button type="button" class="sort-button" (click)="trierOperations(colonne.cle)">{{ colonne.libelle }} {{ indicateurTriOperations(colonne.cle) }}</button>
+                </th>
+              }
+              <th>Voir</th>
+            </tr></thead>
+            <tbody>
+              @for (operation of operationsPage(); track operation.id) {
+                <tr>
+                  <td>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</td>
+                  <td>{{ operation.tiersReconnu || (operation.tiersId ? 'Tiers n° ' + operation.tiersId : 'Non identifié') }}</td>
+                  <td>{{ pieceAssociee(operation) }}</td>
+                  <td>{{ libelleNature(operation.natureOperation) }}</td>
+                  <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
+                  <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>
+                  <td><button type="button" [attr.aria-label]="'Voir ' + operation.libelle" (click)="voirOperation(operation)">Voir</button></td>
+                </tr>
+              } @empty { <tr><td colspan="7">Aucune opération pour cet import et ces filtres.</td></tr> }
+            </tbody>
+          </table>
+        </div>
         <div class="table-pagination" aria-label="Pagination des opérations bancaires">
           <div class="pagination-summary">
             {{ totalOperations() }} ligne(s)
@@ -622,7 +621,6 @@
             <button type="button" [disabled]="pageOperations() >= totalPagesOperations()" (click)="pageSuivanteOperations()">Suivant</button>
           </div>
         </div>
-        }
                 @if (etapeAssistant() !== 'TIERS' && detailAssistant(); as ligne) {
                   <div class="modal-backdrop" (keydown.escape)="detailAssistant.set(null)">
                   <section role="dialog" aria-modal="true" aria-label="Détail de la proposition" class="manual-match-modal operation-detail-dialog">
@@ -634,15 +632,15 @@
                       <section class="assistant-candidat">
                         <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + ligne.operation.id" [disabled]="loading() || ligne.bloquee || c.carte?.conflit"
                           [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,$any($event.target).checked)" />
-                          {{ c.numeroPiece || c.nomTiers }} — {{ c.typePiece }}</label>
+                          {{ c.numeroPiece || c.nomTiers }} @if (c.cle === 'CREATION') { · {{ montant(c.montantPropose) }} } — {{ c.typePiece }}</label>
                         <p>Tiers proposé : {{ c.nomTiers }} · Tiers {{ c.tiersId }}<br>
                           Montant disponible : {{ montant(c.montantDisponible) }}<br>Pièce : {{ c.datePiece || 'sans objet' }} · Échéance : {{ c.dateEcheance || 'absente' }}</p>
                         @for (critere of c.criteres; track critere) { <div>{{ critere }}</div> }
                         @for (alerte of c.avertissements; track alerte) { <p class="warning">{{ alerte }}</p> }
                         @if (c.pieceId && c.typePiece !== 'TIERS') { <button type="button" (click)="ouvrirFacture(c.pieceId,$any(c.typePiece),c.numeroPiece)">Ouvrir la pièce et son justificatif</button> }
-                        <button type="button" (click)="ouvrirTiersAssistant(c.tiersId)">Fiche Tiers et règles bancaires</button>
+
                         @if (choixPourAssistant(ligne,c); as choix) {
-                          @if (c.typePiece !== 'TIERS' && etapeAssistant() !== 'PIECES' && !c.carte) {
+                          @if (c.typePiece !== 'TIERS' && c.cle !== 'CREATION' && !c.carte) {
                             <label>Montant à affecter <input type="number" min="0.01" step="0.01" [max]="c.montantPropose" [value]="choix.montant"
                               (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'montant',+$any($event.target).value)" /></label>
                           }
@@ -653,7 +651,7 @@
                           @if (c.carte?.affectationRequise) {
                             <label><input type="checkbox" [checked]="choix.confirmerAffectation" (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'confirmerAffectation',$any($event.target).checked)" /> Associer explicitement ce fournisseur et classer en achat</label>
                           }
-                          @if (c.avertissements.length && etapeAssistant() !== 'PIECES') {
+                          @if (c.avertissements.length && c.cle !== 'CREATION') {
                             <label><input type="checkbox" [checked]="choix.verifierJustificatif" (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'verifierJustificatif',$any($event.target).checked)" /> J’ai vérifié les avertissements et le justificatif.</label>
                           }
                         }
@@ -695,7 +693,8 @@
                 <button type="button" [disabled]="loading()" (click)="recapAssistant.set(null)">Annuler</button>
               </section></div>
             }
-        @if (operationConsultee(); as operation) {
+        @if (operationConsultee(); as operationListe) {
+          @let operation = detailOperation()?.operation ?? operationListe;
           <div class="modal-backdrop" (keydown.escape)="operationConsultee.set(null)"><section role="dialog" aria-modal="true" aria-label="Détail de l’opération" class="manual-match-modal">
             <h3>{{ operation.libelle }}</h3>
             <dl><dt>Date opération / valeur</dt><dd>{{ operation.dateOperation }} / {{ operation.dateValeur || 'Absente' }}</dd>
@@ -703,8 +702,21 @@
               <dt>Montant signé</dt><dd>{{ montant(montantSigne(operation)) }}</dd><dt>Sens / type</dt><dd>{{ operation.sens }} / {{ operation.typeOperation }}</dd>
               <dt>Tiers / type</dt><dd>{{ operation.tiersReconnu || 'Non identifié' }} / {{ operation.typeTiersReconnu || 'Absent' }}</dd>
               <dt>Nature</dt><dd>{{ libelleNature(operation.natureOperation) }}</dd><dt>Classification</dt><dd>{{ libelleStatutClassification(operation.statutClassification) }}</dd>
-              <dt>Statut rapprochement</dt><dd>{{ operation.statutRapprochement }}</dd><dt>Référence bancaire</dt><dd>{{ operation.referenceBancaire || 'Absente' }}</dd>
-              <dt>Pièce / rapprochement</dt><dd>{{ operation.documentAssocieNumero || 'Absente' }} / {{ operation.libelleRapprochement || 'Absent' }}</dd></dl>
+              <dt>Statut rapprochement</dt><dd>{{ statutsConsultation[statutConsultation(operation)] }}</dd><dt>Référence bancaire</dt><dd>{{ operation.referenceBancaire || 'Absente' }}</dd>
+              <dt>Import d’origine</dt><dd>{{ nomImportOperation(operation) }}</dd>
+              <dt>Pièce associée</dt><dd>{{ pieceAssociee(operation) }}</dd>
+              <dt>Montant rapproché</dt><dd>{{ montant(operation.montantRapproche ?? 0) }}</dd>
+              @if (detailOperation(); as detail) { <dt>Solde</dt><dd>{{ montant(detail.solde) }}</dd> }
+            </dl>
+            @if (detailOperation(); as detail) {
+              <h4>Historique des rapprochements</h4>
+              <ul>
+                @for (trace of detail.historique; track trace.id) {
+                  <li>{{ trace.dateRapprochement }} · {{ trace.documentAssocieNumero || trace.libelleRapprochement || referencePieceHistorique(trace) }} · {{ montant(trace.montantRapproche) }} · {{ trace.statut }}</li>
+                } @empty { <li>Aucun rapprochement enregistré.</li> }
+              </ul>
+            }
+            @if (operationModifiable(operation)) { <button type="button" (click)="operationConsultee.set(null); modifierOperation(operation)">Modifier</button> }
             <button type="button" (click)="operationConsultee.set(null)">Fermer</button>
           </section></div>
         }
