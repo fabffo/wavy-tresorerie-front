@@ -398,6 +398,39 @@ export class TresoreriePage implements OnInit {
     if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
   }
 
+  readonly identificationsCertaines = computed(()=>{
+    const visibles=new Set(this.operationsAffichees().map(o=>o.id));
+    return (this.apercuAssistant()?.lignes ?? []).filter(l=>visibles.has(l.operation.id) && l.operation.id!==this.identification()?.operationId && !l.bloquee && !l.operation.tiersId && this.operationDisponible(l.operation))
+      .flatMap(l=>{
+        const candidats=l.candidats.filter(c=>c.sur && c.typePiece==='TIERS' && c.cle===`REGLE_BANCAIRE:${c.tiersId}`);
+        return candidats.length===1 ? [{ligne:l,candidat:candidats[0]}] : [];
+      });
+  });
+
+  async identifierAutomatiquement():Promise<void> {
+    if(this.etapeAssistant()!=='TIERS' || this.loading() || this.contexteApercuAssistant!==this.cleAssistant())return;
+    const certaines=this.identificationsCertaines();if(!certaines.length)return;
+    const contexte=this.cleAssistant();this.loading.set(true);this.error.set(null);this.bilanAssistant.set(null);
+    const demande:ConfirmationAssistant={etape:'TIERS',categorie:'CARTE',confirmation:true,
+      perimetre:{...this.filtresOperations(),operationIds:certaines.map(c=>c.ligne.operation.id)},
+      selections:certaines.map(({ligne,candidat})=>({operationId:ligne.operation.id,candidatCle:candidat.cle,tiersId:candidat.tiersId,pieceId:null,
+        montant:0,confirmerNature:false,verifierJustificatif:false,confirmerAffectation:false}))};
+    try {
+      const bilan=await firstValueFrom(this.api.confirmerAssistant(demande));
+      if(contexte!==this.cleAssistant())return;
+      this.bilanAssistant.set(bilan);
+      const succes=new Map(certaines.filter(c=>bilan.lignes.some(r=>r.operationId===c.ligne.operation.id && r.statut==='SUCCES')).map(c=>[c.ligne.operation.id,c.candidat]));
+      const actualiser=(op:OperationBancaire)=>{const c=succes.get(op.id);return c?{...op,tiersId:c.tiersId,tiersReconnu:c.nomTiers,typeTiersReconnu:c.typeTiers}:op;};
+      this.operations.update(ops=>ops.map(actualiser));
+      this.apercuAssistant.update(a=>a?this.apercuDisponible({...a,lignes:a.lignes.map(l=>({...l,operation:actualiser(l.operation),
+        candidats:bilan.lignes.some(r=>r.operationId===l.operation.id && r.statut!=='SUCCES')?l.candidats.map(c=>({...c,sur:false})):l.candidats}))}):a);
+      this.pageResultatsAssistant.set(Math.min(this.pageResultatsAssistant(),this.totalPagesResultatsAssistant()));
+      if(succes.has(this.identification()?.operationId ?? 0))this.identification.set(null);
+      this.choixAssistant.update(cs=>cs.filter(c=>!succes.has(c.choix.operationId)));
+    }catch(e){if(contexte===this.cleAssistant())this.error.set('Identification non confirmée. Actualisez les propositions avant de reprendre. '+getHttpErrorMessage(e));}
+    finally{this.loading.set(false);}
+  }
+
   readonly identification = signal<BrouillonIdentification|null>(null);
   readonly erreurIdentification = signal<string|null>(null);
   readonly rolesIdentification = signal<string[]>([]);
@@ -433,7 +466,7 @@ export class TresoreriePage implements OnInit {
     const actives=regles.filter(r=>r.actif && r.typeRegle==='OPERATION_BANCAIRE');
     const conflit=actives.find(r=>r.tiersId!==d.tiersId && (this.regleCorrespondante(r,libelle)
       || (r.typeMotif==='CONTIENT' && (motif.includes(this.normaliserIdentification(r.motif)) || this.normaliserIdentification(r.motif).includes(motif)))));
-    if(conflit)throw new Error('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
+    if(conflit && !adaptee)throw new Error('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
     const equivalente=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && r.typeMotif==='CONTIENT');
     if(equivalente && !equivalente.actif)throw new Error('Une règle équivalente est désactivée ; elle ne sera pas réactivée automatiquement.');
     return actives.find(r=>r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && this.regleCorrespondante(r,libelle)) ?? null;

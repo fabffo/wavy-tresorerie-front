@@ -208,4 +208,55 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   expect(page.operations()[1]).toEqual(autre.operation);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([92]);
  });
 
+ it('propose BENOME par règle unique malgré un autre candidat nominal et écrit seulement au clic',async()=>{
+  const benome={...candidat,cle:'REGLE_BANCAIRE:9',nomTiers:'Benome',sur:true};
+  const l={...ligne,candidats:[benome,{...candidat,cle:'T:59',tiersId:59,nomTiers:'Benoit Sira',sur:false}],operation:{...operation,libelle:'Virement émis - VIR INST vers Benome Benoit Sira - wavy services Fac83 nov25 B.Sira'}};
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));page.previsualiserAssistant();
+  expect(page.identificationsCertaines()).toHaveLength(1);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);
+  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({etape:'TIERS',perimetre:{operationIds:[91]},confirmation:true,selections:[{
+    operationId:91,candidatCle:'REGLE_BANCAIRE:9',tiersId:9,pieceId:null,montant:0,confirmerNature:false,verifierJustificatif:false,confirmerAffectation:false,
+  }]}));
+  expect(page.operations()[0]).toMatchObject({tiersId:9,tiersReconnu:'Benome',natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE',statutRapprochement:'NON_RAPPROCHEE',montant:10140});
+  expect(page.operationsAffichees()).toHaveLength(0);expect(page.apercuAssistant()?.restantes).toBe(0);
+  expect(api['creerTiersIdentification']).not.toHaveBeenCalled();expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
+ });
+ it('ignore les identités plausibles, les conflits, les lignes bloquées et les tiers déjà renseignés',async()=>{
+  const sure={...candidat,cle:'REGLE_BANCAIRE:9'};
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([
+    {...ligne,candidats:[{...candidat,sur:true}]},
+    {...ligne,operation:{...operation,id:92},candidats:[{...sure,sur:false},{...sure,tiersId:59,cle:'T:59',sur:false}]},
+    {...ligne,operation:{...operation,id:93},candidats:[sure],bloquee:true},
+    {...ligne,operation:{...operation,id:94,tiersId:9},candidats:[sure]},
+  ])));page.previsualiserAssistant();expect(page.identificationsCertaines()).toHaveLength(0);await page.identifierAutomatiquement();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+ });
+ it('ne traite que la page affichée et conserve les filtres',async()=>{
+  const lignes=Array.from({length:11},(_,i)=>({...ligne,operation:{...operation,id:91+i},candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}));
+  api['previsualiserAssistant'].mockReturnValue(of(reponse(lignes)));page.filtresOperations.set({natureOperation:'SALAIRE'});page.previsualiserAssistant();page.taillePageOperations.set(10);page.pageResultatsAssistant.set(2);
+  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({perimetre:{operationIds:[101],natureOperation:'SALAIRE'}}));
+ });
+ it('n’envoie jamais un lot sous une autre société ou après changement des filtres',async()=>{
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}])));page.previsualiserAssistant();societe=4;
+  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+ });
+ it('ne retire pas une opération dont le serveur refuse la règle devenue conflictuelle',async()=>{
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}])));page.previsualiserAssistant();
+  api['confirmerAssistant'].mockReturnValue(of({reussis:0,refuses:1,conflits:0,aReprendre:0,lignes:[{operationId:91,statut:'REFUSE',message:'Règle devenue conflictuelle'}]}));
+  await page.identifierAutomatiquement();expect(page.operations()[0].tiersId).toBeNull();expect(page.operationsAffichees()).toHaveLength(1);expect(page.identificationsCertaines()).toHaveLength(0);
+ });
+ it('affiche un bouton direct sans ajouter de confirmation ni de formulaire de paiement',()=>{
+  const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}])));page.previsualiserAssistant();fixture.detectChanges();
+  const html:HTMLElement=fixture.nativeElement;expect(html.textContent).toContain('Identifier automatiquement (1)');expect(html.querySelector('[role="dialog"]')).toBeNull();
+  expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+ });
+
+ it('garde le choix manuel en cas de règles concurrentes sans créer une règle supplémentaire',async()=>{
+  const l={...ligne,operation:{...operation,libelle:'VIR BENOME BENOIT SIRA'},candidats:[{...candidat,nomTiers:'Benome',sur:false},{...candidat,cle:'T:59',tiersId:59,nomTiers:'Benoit Sira',sur:false}]};
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));api['lireTiersIdentification'].mockReturnValue(of({...tiers,raisonSociale:'Benome'}));
+  api['reglesIdentification'].mockReturnValue(of([{...regle,motif:'BENOME'},{...regle,tiersId:59,motif:'SIRA'}]));page.previsualiserAssistant();
+  expect(page.identificationsCertaines()).toHaveLength(0);page.choisirPropositionIdentification(l,l.candidats[0]);await page.validerIdentification();
+  expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({selections:[expect.objectContaining({tiersId:9,candidatCle:'MANUEL:9',confirmerNature:false})]}));
+ });
+
 });

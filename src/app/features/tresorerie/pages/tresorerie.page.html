@@ -452,6 +452,8 @@
           @if (apercuAssistant(); as apercu) {
             <span aria-live="polite">{{ apercu.lignes.length }} {{ etapeAssistant() === 'TIERS' ? 'opération(s) restant à identifier' : 'opération(s)' }} · {{ apercu.propositions }} proposition(s) · {{ apercu.anomalies }} anomalie(s)</span>
             @if (etapeAssistant() === 'TIERS') {
+              <button type="button" class="primary" [disabled]="loading() || !identificationsCertaines().length" (click)="identifierAutomatiquement()">Identifier automatiquement ({{ identificationsCertaines().length }})</button>
+              <span>Règles certaines de cette page ; aucun paiement.</span>
               <span>Choisissez un tiers par opération ; les correspondances multiples restent à examiner.</span>
             } @else if (etapeAssistant() === 'PIECES') {
               <button type="button" class="primary" [disabled]="loading() || !apercu.eligibles" (click)="preparerAssistant(true)">Traiter les pièces autorisées ({{ apercu.eligibles }})</button>
@@ -497,7 +499,7 @@
                       } @else {
                         @for (c of (etapeAssistant() === 'TIERS' ? ligne.candidats : ligne.candidats.slice(0,2)); track c.cle) {
                           @if(etapeAssistant() === 'TIERS') {
-                            <label class="bank-tier-choice"><input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId" [disabled]="loading() || ligne.bloquee" [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId" (change)="choisirPropositionIdentification(ligne,c)" /><span>{{ c.nomTiers }}</span></label>
+                            <label class="bank-tier-choice"><input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId" [disabled]="loading() || ligne.bloquee" [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId" (change)="choisirPropositionIdentification(ligne,c)" /><span>{{ c.nomTiers }} @if(c.sur && c.cle.startsWith('REGLE_BANCAIRE:')){<em>— règle bancaire unique</em>}</span></label>
                           } @else { <div>{{ c.numeroPiece || c.nomTiers }}</div> }
                         }
                         @if (etapeAssistant() !== 'TIERS' && ligne.candidats.length === 1 && !ligne.candidats[0].sur) { <strong>À vérifier avant confirmation</strong> }
