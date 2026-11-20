@@ -305,29 +305,41 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
 
- it('associe la règle certaine du salarié sans permettre une création concurrente',async()=>{
-  const fixture=TestBed.createComponent(TresoreriePage);
-  page=fixture.componentInstance;
+ it('retient le salarié et l’école sans sélection et applique les deux imports en un clic', async () => {
+  const fixture = TestBed.createComponent(TresoreriePage);
+  page = fixture.componentInstance;
   page.onglet.set('operations');
+  page.choixImport.set('tous');
+  vi.mocked(page.chargerOperations).mockRestore();
   fixture.detectChanges();
-  const niengele={...candidat,cle:'REGLE_BANCAIRE:4',tiersId:4,nomTiers:'Jean-Marie Niengele',typeTiers:'SALARIE'} as CandidatAssistant;
-  const l={...ligne,operation:{...operation,libelle:'Virement émis - VIR INST vers JEAN MARIE NIENGEL frais Rouen JMNiengele dec25'},candidats:[niengele]};
-  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));
+  const salarie = { ...candidat, cle: 'REGLE_BANCAIRE:4', tiersId: 4, nomTiers: 'Jean-Marie Niengele', typeTiers: 'SALARIE' } as CandidatAssistant;
+  const ecole = { ...candidat, cle: 'REGLE_BANCAIRE:6', tiersId: 6, nomTiers: 'École Supérieure de la Banque' };
+  const a = { ...ligne, operation: { ...operation, importReleveBancaireId: 1 }, candidats: [salarie,
+   { ...candidat, cle: 'T:8', tiersId: 8, nomTiers: 'CASDEN', sur: false }] };
+  const b = { ...ligne, operation: { ...operation, id: 92, importReleveBancaireId: 2 }, candidats: [ecole,
+   { ...candidat, cle: 'T:9', nomTiers: 'BRED BANQUE POPULAIRE', sur: false }] };
+  const reste = { ...ligne, operation: { ...operation, id: 93 }, candidats: [] };
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([a, b, reste])));
+  api['confirmerAssistant'].mockReturnValue(of({reussis:2,refuses:0,conflits:0,aReprendre:0,
+   lignes:[{operationId:91,statut:'SUCCES'},{operationId:92,statut:'SUCCES'}]}));
+  api['operations'] = vi.fn(() => of({content:[reste.operation],totalElements:3,totalPages:1}));
+  api['compteursOperations'] = vi.fn(() => of({total:3,tiersIdentifies:2,nonRapprochees:1,rapprochees:0,partielles:0,sansTiers:1}));
   page.previsualiserAssistant();
   fixture.detectChanges();
-  expect(fixture.nativeElement.textContent).toContain('Jean-Marie Niengele');
-  expect(fixture.nativeElement.textContent).not.toContain('Aucun de ces tiers');
-  expect(fixture.nativeElement.textContent).not.toContain('Aucune correspondance');
-  expect(page.identificationsCertaines().map(x=>x.candidat.tiersId)).toEqual([4]);
-  page.ouvrirValidationTiers(l);
-  expect(page.identification()).toBeNull();
+  const html: HTMLElement = fixture.nativeElement;
+  expect(html.textContent).toContain('Jean-Marie Niengele');
+  expect(html.textContent).toContain('École Supérieure de la Banque');
+  expect(html.textContent).not.toMatch(/CASDEN|BRED/);
+  expect(html.querySelectorAll('input[type=radio]')).toHaveLength(0);
+  expect(page.identificationsCertaines()).toHaveLength(2);
+  Array.from(html.querySelectorAll('button')).find(bouton => bouton.textContent?.trim() === 'Appliquer les identifications certaines')!.click();
 
-  page.choisirPropositionIdentification(l,niengele);
-  await page.validerIdentification();
-  expect(api['reglesIdentification']).toHaveBeenCalledTimes(1);
-  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({
-    selections:[expect.objectContaining({tiersId:4,candidatCle:'REGLE_BANCAIRE:4',confirmerNature:false})],
-  }));
+  await vi.waitFor(() => expect(page.compteursOperations()?.sansTiers).toBe(1));
+  expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);
+  const demande = api['confirmerAssistant'].mock.calls[0][0];
+  expect(demande.perimetre.importId).toBeUndefined();
+  expect(demande.selections.map((choix: { tiersId: number }) => choix.tiersId)).toEqual([4, 6]);
+  expect(page.operationsAffichees().map(op => op.id)).toEqual([93]);
   expect(api['creerTiersIdentification']).not.toHaveBeenCalled();
   expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
  });

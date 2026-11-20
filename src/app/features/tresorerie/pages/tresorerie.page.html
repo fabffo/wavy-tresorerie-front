@@ -463,15 +463,18 @@
                 <h4>{{ operation.dateOperation }} · {{ operation.libelle }} · {{ montant(montantSigne(operation)) }}</h4>
                     @if (ligneAssistant(operation.id); as ligne) {
                       @if (etapeAssistant() === 'TIERS') {
-                        @let certaine = regleCertaine(ligne);
-                        @for (c of ligne.candidats; track c.cle) {
-                          <label class="bank-tier-choice">
-                            <input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId"
-                              [disabled]="loading() || ligne.bloquee || (!!certaine && certaine.tiersId !== c.tiersId)"
-                              [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId"
-                              (change)="choisirPropositionIdentification(ligne,c)" />
-                            <span>{{ c.nomTiers }} @if (c.sur) { <em>· règle bancaire certaine</em> }</span>
-                          </label>
+                        @if (!ligne.bloquee ? regleCertaine(ligne) : undefined; as certaine) {
+                          <strong>{{ certaine.nomTiers }}</strong> · <span>Retenu pour l’application globale</span>
+                        } @else {
+                          @for (c of ligne.candidats; track c.cle) {
+                            <label class="bank-tier-choice">
+                              <input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId"
+                                [disabled]="loading() || ligne.bloquee"
+                                [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId"
+                                (change)="choisirPropositionIdentification(ligne,c)" />
+                              <span>{{ c.nomTiers }}</span>
+                            </label>
+                          }
                         }
                       } @else {
                         @for (c of ligne.candidats.slice(0, 2); track c.cle) {

@@ -475,7 +475,7 @@ export class TresoreriePage implements OnInit {
 
   readonly identificationsCertaines = computed(() =>
     (this.apercuAssistant()?.lignes ?? [])
-      .filter(ligne => ligne.operation.id !== this.identification()?.operationId && !ligne.bloquee && !ligne.operation.tiersId)
+      .filter(ligne => !ligne.bloquee && !ligne.operation.tiersId)
       .flatMap(ligne => {
         const candidat = this.regleCertaine(ligne);
         return candidat ? [{ ligne, candidat }] : [];
