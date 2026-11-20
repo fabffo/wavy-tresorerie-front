@@ -879,7 +879,11 @@ export class TresoreriePage implements OnInit {
   readonly totalRapprochementManuel = computed(() => this.candidatesRapprochement()
     .filter((facture) => facture.selectionnee)
     .reduce((total, facture) => total + Number(facture.montantRapproche || 0), 0));
-  readonly montantOperationManuel = computed(() => Math.abs(this.operationRapprochementManuel()?.montant ?? 0));
+  readonly operationManuelleId = signal<number | null>(null);
+  readonly montantOperationManuel = computed(() => {
+    const operation = this.operationRapprochementManuel();
+    return Math.max(0, Math.abs((operation?.sens === 'DEBIT' ? operation.debit ?? operation.montant : operation?.montant) ?? 0) - (operation?.montantRapproche ?? 0));
+  });
   readonly resteRapprochementManuel = computed(() => Math.max(0, this.montantOperationManuel() - this.totalRapprochementManuel()));
   readonly debutOperations = computed(() => this.totalOperations() === 0 ? 0 : (Math.min(this.pageOperations(), this.totalPagesOperations()) - 1) * this.taillePageOperations() + 1);
   readonly finOperations = computed(() => Math.min(this.debutOperations() + this.operationsPage().length - 1, this.totalOperations()));
@@ -947,16 +951,33 @@ export class TresoreriePage implements OnInit {
     });
   }
 
+  choisirOperationManuelle(): void {
+    const operation = this.operationsPage().find(o => o.id === this.operationManuelleId());
+    if (!this.loading() && operation && this.rapprochementManuelPossible(operation))
+      this.ouvrirRapprochementManuel(operation);
+  }
+
+  paginerOperationsManuelles(delta: number): void {
+    this.operationManuelleId.set(null);
+    this.pageOperations.update(page => page + delta);
+    this.loading.set(true);
+    this.chargerOperations(() => this.loading.set(false));
+  }
+
   ouvrirRapprochementManuel(operation: OperationBancaire): void {
+    const contexte = this.cleContexteCartes();
+    this.error.set(null);
     this.operationRapprochementManuel.set(operation);
     this.candidatesRapprochement.set([]);
     this.loading.set(true);
     this.api.facturesCandidates(operation.id).subscribe({
       next: (factures) => {
+        if (contexte !== this.cleContexteCartes()) return;
         this.candidatesRapprochement.set(factures.map((facture) => ({ ...facture, selectionnee: false, montantRapproche: 0 })));
         this.loading.set(false);
       },
       error: (error) => {
+        if (contexte !== this.cleContexteCartes()) return;
         this.error.set(getHttpErrorMessage(error));
         this.operationRapprochementManuel.set(null);
         this.loading.set(false);
@@ -974,32 +995,45 @@ export class TresoreriePage implements OnInit {
     this.shellBridge.navigate('factures', path, numero || `Facture ${id}`);
   }
 
-  selectionnerCandidate(id: number, selectionnee: boolean): void {
-    let resteOperation = this.resteRapprochementManuel();
-    this.candidatesRapprochement.update((items) => items.map((facture) => {
-      if (facture.id !== id) return facture;
-      const montant = selectionnee ? Math.min(facture.resteAPayer, resteOperation) : 0;
-      return { ...facture, selectionnee, montantRapproche: montant };
-    }));
+  cleCandidateManuelle(facture: FactureCandidateRapprochement): string {
+    return facture.typeFacture + ':' + facture.id;
   }
 
-  modifierMontantCandidate(id: number, valeur: string): void {
-    this.candidatesRapprochement.update((items) => items.map((facture) => facture.id === id
+  selectionnerCandidate(cle: string, selectionnee: boolean): void {
+    this.candidatesRapprochement.update(items => items.map(facture => ({
+      ...facture,
+      selectionnee: selectionnee && this.cleCandidateManuelle(facture) === cle,
+      montantRapproche: selectionnee && this.cleCandidateManuelle(facture) === cle
+        ? Math.min(facture.resteAPayer, this.montantOperationManuel()) : 0,
+    })));
+  }
+
+  modifierMontantCandidate(cle: string, valeur: string): void {
+    this.candidatesRapprochement.update(items => items.map(facture => this.cleCandidateManuelle(facture) === cle
       ? { ...facture, montantRapproche: Number(valeur) || 0 }
       : facture));
   }
 
+  readonly confirmationManuellePossible = computed(() => !this.loading() &&
+    this.candidatesRapprochement().some(f => f.selectionnee && f.montantRapproche > 0
+      && f.montantRapproche <= Math.min(f.resteAPayer, this.montantOperationManuel())
+      && Math.abs(f.montantRapproche * 100 - Math.round(f.montantRapproche * 100)) < 0.000001));
+
   validerRapprochementManuel(): void {
     const operation = this.operationRapprochementManuel();
-    if (!operation || this.totalRapprochementManuel() <= 0 || this.totalRapprochementManuel() > this.montantOperationManuel() + 0.01) return;
+    if (!operation || !this.confirmationManuellePossible()) return;
     const lignes = this.candidatesRapprochement().filter((facture) => facture.selectionnee).map((facture) => ({
       factureId: facture.id,
       typeFacture: facture.typeFacture,
       montantRapproche: facture.montantRapproche,
     }));
+    const contexte = this.cleContexteCartes();
+    this.error.set(null);
     this.loading.set(true);
     this.api.rapprocherManuellement(operation.id, lignes).subscribe({
       next: (resultat) => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.operationManuelleId.set(null);
         this.message.set(`Rapprochement ${resultat.statutRapprochement.toLowerCase()} : ${this.montant(resultat.montantRapproche)}.`);
         this.operationRapprochementManuel.set(null);
         this.loading.set(false);
@@ -1007,20 +1041,20 @@ export class TresoreriePage implements OnInit {
         this.chargerRapprochements();
       },
       error: (error) => {
-        this.error.set(getHttpErrorMessage(error));
+        if (contexte !== this.cleContexteCartes()) return;
+        this.error.set(error?.error?.message || getHttpErrorMessage(error));
         this.loading.set(false);
       },
     });
   }
 
   fermerRapprochementManuel(): void {
-    this.operationRapprochementManuel.set(null);
+    if (!this.loading()) this.operationRapprochementManuel.set(null);
   }
 
   rapprochementManuelPossible(operation: OperationBancaire): boolean {
-    return operation.statutRapprochement !== 'RAPPROCHEE' && !!operation.tiersId
-      && ((operation.sens === 'DEBIT' && ['FOURNISSEUR', 'FOURNISSEUR_SERVICE'].includes(operation.typeTiersReconnu ?? ''))
-        || (operation.sens === 'CREDIT' && operation.typeTiersReconnu === 'CLIENT'));
+    return operation.statutRapprochement !== 'RAPPROCHEE' && operation.statutRapprochement !== 'IGNOREE'
+      && !!operation.tiersId && Math.abs(operation.sens === 'DEBIT' ? operation.debit ?? operation.montant : operation.montant) > (operation.montantRapproche ?? 0);
   }
 
   changerOnglet(onglet: OngletTresorerie): void {
@@ -1032,6 +1066,8 @@ export class TresoreriePage implements OnInit {
   }
 
   charger(): void {
+    this.operationRapprochementManuel.set(null);
+    this.operationManuelleId.set(null);
     this.propositionsCartes.set(null);
     this.contexteCartes = null;
     this.selectionCartes.set(new Set());
@@ -1078,6 +1114,8 @@ export class TresoreriePage implements OnInit {
         this.chargerOperations(fin);
         break;
       case 'rapprochements':
+        this.operations.set([]);
+        this.chargerOperations();
         this.chargerRapprochements(fin);
         this.api.regles().subscribe({ next: (data) => this.regles.set(data), error: () => this.regles.set([]) });
         break;

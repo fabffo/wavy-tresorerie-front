@@ -763,6 +763,25 @@
             </button>
           </div>
         </div>
+        <div class="rapprochement-tools">
+          <label>
+            Opération bancaire
+            <select [value]="operationManuelleId() ?? ''" (change)="operationManuelleId.set(+$any($event.target).value || null)">
+              <option value="">Choisir une opération</option>
+              @for (operation of operationsPage(); track operation.id) {
+                @if (rapprochementManuelPossible(operation)) {
+                  <option [value]="operation.id">{{ operation.dateOperation }} · {{ operation.libelle }} · {{ operation.tiersReconnu }}</option>
+                }
+              }
+            </select>
+          </label>
+          <div class="actions">
+            <button type="button" [disabled]="loading() || pageOperations() <= 1" (click)="paginerOperationsManuelles(-1)">Précédente</button>
+            <span>Page {{ pageOperations() }} / {{ totalPagesOperations() }}</span>
+            <button type="button" [disabled]="loading() || pageOperations() >= totalPagesOperations()" (click)="paginerOperationsManuelles(1)">Suivante</button>
+            <button type="button" [disabled]="loading() || !operationManuelleId()" (click)="choisirOperationManuelle()">Rapprocher manuellement</button>
+          </div>
+        </div>
         <div class="table-scroll-container">
           <table class="rapprochements-table">
             <thead>
@@ -921,28 +940,33 @@
             <div><h2>Rapprochement manuel</h2><p>{{ operation.libelle }} · {{ operation.tiersReconnu }}</p></div>
             <button type="button" (click)="fermerRapprochementManuel()">Fermer</button>
           </header>
+          @if (error(); as erreur) { <p class="warning" role="alert">{{ erreur }}</p> }
           <div class="manual-summary">
-            <span>Montant opération <strong>{{ montant(montantOperationManuel()) }}</strong></span>
+            <span>Disponible bancaire <strong>{{ montant(montantOperationManuel()) }}</strong></span>
             <span>Total sélectionné <strong>{{ montant(totalRapprochementManuel()) }}</strong></span>
             <span>Reste à rapprocher <strong>{{ montant(resteRapprochementManuel()) }}</strong></span>
           </div>
           <div class="table-scroll-container">
             <table>
-              <thead><tr><th>Sélection</th><th>N° facture</th><th>Date</th><th>Échéance</th><th class="right">Reste à payer</th><th class="right">Montant à rapprocher</th></tr></thead>
+              <thead><tr><th>Sélection</th><th>Référence</th><th>Type</th><th>Date ou période</th><th class="right">Montant</th><th class="right">Solde disponible</th><th>Statut</th><th class="right">Montant à rapprocher</th></tr></thead>
               <tbody>
-                @for (facture of candidatesRapprochement(); track facture.id) {
+                @for (facture of candidatesRapprochement(); track cleCandidateManuelle(facture)) {
                   <tr>
-                    <td><input type="checkbox" [checked]="facture.selectionnee" (change)="selectionnerCandidate(facture.id, $any($event.target).checked)"></td>
-                    <td>{{ facture.numeroFacture }}</td><td>{{ facture.dateFacture }}</td><td>{{ facture.dateEcheance || '-' }}</td>
+                    <td><input type="radio" name="pieceManuelle" [attr.aria-label]="facture.numeroFacture" [checked]="facture.selectionnee" (change)="selectionnerCandidate(cleCandidateManuelle(facture), true)"></td>
+                    <td>{{ facture.numeroFacture }}</td>
+                    <td>{{ (facture.typePiece || facture.typeFacture).replaceAll('_', ' ') }}</td>
+                    <td>{{ facture.typeFacture === 'SALAIRE' ? facture.dateFacture.slice(0, 7) : facture.dateFacture }}</td>
+                    <td class="right">{{ facture.montantTotal != null ? montant(facture.montantTotal) : '—' }}</td>
                     <td class="right">{{ montant(facture.resteAPayer) }}</td>
-                    <td class="right"><input class="amount-input" type="number" min="0.01" step="0.01" [max]="facture.resteAPayer" [disabled]="!facture.selectionnee" [value]="facture.montantRapproche" (input)="modifierMontantCandidate(facture.id, $any($event.target).value)"></td>
+                    <td>{{ facture.statutPaiement?.replaceAll('_', ' ') || '—' }}</td>
+                    <td class="right"><input class="amount-input" type="number" aria-label="Montant à rapprocher" min="0.01" step="0.01" [max]="facture.resteAPayer" [disabled]="loading() || !facture.selectionnee" [value]="facture.montantRapproche" (input)="modifierMontantCandidate(cleCandidateManuelle(facture), $any($event.target).value)"></td>
                   </tr>
-                } @empty { <tr><td colspan="6" class="empty">Aucune facture ouverte pour ce tiers.</td></tr> }
+                } @empty { <tr><td colspan="8" class="empty">{{ loading() ? 'Chargement des pièces…' : 'Aucune pièce ouverte pour ce tiers.' }}</td></tr> }
               </tbody>
             </table>
           </div>
           <footer class="form-actions">
-            <button type="button" class="primary" [disabled]="totalRapprochementManuel() <= 0 || totalRapprochementManuel() > montantOperationManuel() + 0.01" (click)="validerRapprochementManuel()">Valider le rapprochement</button>
+            <button type="button" class="primary" [disabled]="!confirmationManuellePossible()" (click)="validerRapprochementManuel()">Valider le rapprochement</button>
             <button type="button" (click)="fermerRapprochementManuel()">Annuler</button>
           </footer>
         </section>

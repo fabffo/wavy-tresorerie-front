@@ -283,6 +283,9 @@ export interface FactureCandidateRapprochement {
   numeroFacture: string;
   dateFacture: string;
   dateEcheance?: string | null;
+  montantTotal?: number | null;
+  statutPaiement?: string | null;
+  typePiece?: string | null;
   resteAPayer: number;
   libelle?: string | null;
   nomTiers?: string | null;

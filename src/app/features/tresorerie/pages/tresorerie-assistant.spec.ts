@@ -47,6 +47,24 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   }
   function selectionner(l = ligne, c = candidat) { page.selectionnerAssistant(l,c,true); }
 
+  it('sélectionne manuellement une paie sans confondre une pièce achat du même identifiant', () => {
+    api['facturesCandidates'] = vi.fn(() => of([
+      { id: 20, typeFacture: 'ACHAT', numeroFacture: 'NDF-20', resteAPayer: 100 },
+      { id: 20, typeFacture: 'SALAIRE', numeroFacture: 'SAL-20', resteAPayer: 100 },
+    ]));
+    api['rapprocherManuellement'] = vi.fn(() => new Subject());
+    page.operations.set([{ ...operation, montantRapproche: 30 }]);
+    page.operationManuelleId.set(operation.id);
+    page.choisirOperationManuelle();
+    page.selectionnerCandidate('SALAIRE:20', true);
+    expect(page.totalRapprochementManuel()).toBe(70);
+    expect(api['rapprocherManuellement']).not.toHaveBeenCalled();
+    page.validerRapprochementManuel();
+    page.validerRapprochementManuel();
+    expect(api['rapprocherManuellement']).toHaveBeenCalledExactlyOnceWith(operation.id,
+      [{ factureId: 20, typeFacture: 'SALAIRE', montantRapproche: 70 }]);
+  });
+
   it('ouvre quatre traitements et bloque le rapprochement avant identification', () => {
     page.ouvrirAssistant();page.changerEtapeAssistant('SALAIRES');expect(api['previsualiserAssistant']).not.toHaveBeenCalled();
     page.changerEtapeAssistant('TIERS');
