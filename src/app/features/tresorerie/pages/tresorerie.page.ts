@@ -466,13 +466,19 @@ export class TresoreriePage implements OnInit {
     if (selectionner) this.selectionnerAssistant(enrichie, candidat, true);
   }
 
-  readonly identificationsCertaines = computed(()=>{
-    return (this.apercuAssistant()?.lignes ?? []).filter(l=>l.operation.id!==this.identification()?.operationId && !l.bloquee && !l.operation.tiersId)
-      .flatMap(l=>{
-        const candidats=l.candidats.filter(c=>c.sur && c.typePiece==='TIERS' && c.cle===`REGLE_BANCAIRE:${c.tiersId}`);
-        return candidats.length===1 ? [{ligne:l,candidat:candidats[0]}] : [];
-      });
-  });
+  regleCertaine(ligne: LigneAssistant): CandidatAssistant | undefined {
+    const candidates = ligne.candidats.filter(c => c.sur && c.typePiece === 'TIERS' && c.cle === `REGLE_BANCAIRE:${c.tiersId}`);
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
+
+  readonly identificationsCertaines = computed(() =>
+    (this.apercuAssistant()?.lignes ?? [])
+      .filter(ligne => ligne.operation.id !== this.identification()?.operationId && !ligne.bloquee && !ligne.operation.tiersId)
+      .flatMap(ligne => {
+        const candidat = this.regleCertaine(ligne);
+        return candidat ? [{ ligne, candidat }] : [];
+      })
+  );
 
   async identifierAutomatiquement():Promise<void> {
     if(this.etapeAssistant()!=='TIERS' || this.loading() || this.contexteApercuAssistant!==this.cleAssistant())return;
@@ -566,7 +572,8 @@ export class TresoreriePage implements OnInit {
   }
 
   ouvrirValidationTiers(ligne:LigneAssistant,tiersId?:number):void {
-    if(this.loading() || ligne.bloquee || ligne.operation.tiersId)return;
+    const certaine = this.regleCertaine(ligne);
+    if (this.loading() || ligne.bloquee || ligne.operation.tiersId || (certaine && certaine.tiersId !== tiersId)) return;
     const sequence=++this.sequenceIdentification,contexte=this.contexteIdentification();
     this.motifIdentificationModifie=false;
     this.detailAssistant.set(null);this.menuOperation.set(null);this.erreurIdentification.set(null);this.doublonsIdentification.set([]);
@@ -583,6 +590,10 @@ export class TresoreriePage implements OnInit {
       motif:motifPropose,nouveau:!id,
       typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',nomCommercial:'',pieceRapprochementAutorisee:'non',actif:'oui',categorieMarchand:'',
       creationIncertaine:reprise?.incertain ?? false,tiersCree:!!reprise?.tiersId});
+    if (certaine) {
+      this.chargementIdentification.set(false);
+      return;
+    }
     this.chargementIdentification.set(true);
     this.api.reglesIdentification().subscribe({next:regles=>{
       if(sequence!==this.sequenceIdentification || contexte!==this.contexteIdentification())return;
@@ -659,38 +670,46 @@ export class TresoreriePage implements OnInit {
       const ligne=apercu.lignes.find(l=>l.operation.id===d.operationId);
       if(!ligne || ligne.bloquee)throw new Error('Cette opération n’est plus disponible.');
       if(ligne.operation.tiersId && ligne.operation.tiersId!==d.tiersId)throw new Error('Cette opération possède déjà un autre tiers. Actualisez les propositions.');
-      const regles=await firstValueFrom(this.api.reglesIdentification());verifier();
-      let regle=this.verifierReglesIdentification(regles,d,ligne.operation.libelle);
-      if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new Error('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
-      if(!d.tiersId) {
-        const natures = d.typeTiers === 'ORGANISATION' ? this.naturesOrganisationIdentification() : this.naturesPersonneIdentification();
-        if(!natures.includes(d.nature) || !d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
-        const nom=d.typeTiers==='ORGANISATION'?d.raisonSociale.trim():[d.prenom.trim(),d.nom.trim()].join(' ');
-        const doublons=await firstValueFrom(this.api.listerTiersIdentification(nom));verifier();
-        if(doublons.length){this.doublonsIdentification.set(doublons);throw new Error('Une fiche peut déjà correspondre. Sélectionnez-la ou précisez l’identité.');}
-        this.sauvegarderRepriseIdentification(d,true);this.identification.update(x=>x?{...x,creationIncertaine:true}:x);
-        let tiers:TiersIdentification;
-        try {tiers=await firstValueFrom(this.api.creerTiersIdentification({typeTiers:d.typeTiers,roles:[d.role], actif: d.actif === 'oui', pieceRapprochementAutorisee: d.pieceRapprochementAutorisee === 'oui',
-          ...(d.typeTiers==='ORGANISATION'?{raisonSociale:d.raisonSociale.trim(),natureOrganisation:d.nature,nomCommercial:d.nomCommercial.trim() || d.raisonSociale.trim()}:{nom:d.nom.trim(),prenom:d.prenom.trim(),naturePersonne:d.nature}),
-          ...(d.role==='MARCHAND'?{categorieMarchand:d.categorieMarchand}:{}),}));}
-        catch(e){if(e instanceof HttpErrorResponse && [400,401,403,404,422].includes(e.status)){this.sauvegarderRepriseIdentification(d,false);this.identification.update(x=>x?{...x,creationIncertaine:false}:x);}throw e;}
-        // Conserver l’ID avant tout autre appel, même si le contexte vient de changer.
-        d.tiersId=tiers.id;d.nomTiers=this.nomIdentification(tiers);d.tiersCree=true;d.creationIncertaine=false;
-        if(contexte===this.contexteIdentification())this.identification.set({...d,nouveau:false});
-        sessionStorage.setItem(`wavy-identification:${contexte}:${d.operationId}`,JSON.stringify({tiersId:tiers.id,motif:d.motif,incertain:false}));
-        verifier();this.identification.set({...d,nouveau:false});
-      } else {
-        const tiers=await firstValueFrom(this.api.lireTiersIdentification(d.tiersId));verifier();
-        if(tiers.actif===false)throw new Error('Le tiers sélectionné est inactif.');d.nomTiers=this.nomIdentification(tiers);
+      const certaine = this.regleCertaine(ligne);
+      if (certaine && certaine.tiersId !== d.tiersId) {
+        throw new Error('Une règle bancaire certaine identifie déjà ce tiers. Actualisez les propositions.');
       }
-      this.sauvegarderRepriseIdentification(d,false);
-      if(!regle) {
-        regle=await firstValueFrom(this.api.enregistrerRegleIdentification(d.tiersId!,d.motif.trim()));verifier();
-        if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new Error('La règle enregistrée doit être vérifiée avant association.');
+      if (certaine) {
+        d.nomTiers = certaine.nomTiers;
+      } else {
+        const regles=await firstValueFrom(this.api.reglesIdentification());verifier();
+        let regle=this.verifierReglesIdentification(regles,d,ligne.operation.libelle);
+        if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new Error('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
+        if(!d.tiersId) {
+          const natures = d.typeTiers === 'ORGANISATION' ? this.naturesOrganisationIdentification() : this.naturesPersonneIdentification();
+          if(!natures.includes(d.nature) || !d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
+          const nom=d.typeTiers==='ORGANISATION'?d.raisonSociale.trim():[d.prenom.trim(),d.nom.trim()].join(' ');
+          const doublons=await firstValueFrom(this.api.listerTiersIdentification(nom));verifier();
+          if(doublons.length){this.doublonsIdentification.set(doublons);throw new Error('Une fiche peut déjà correspondre. Sélectionnez-la ou précisez l’identité.');}
+          this.sauvegarderRepriseIdentification(d,true);this.identification.update(x=>x?{...x,creationIncertaine:true}:x);
+          let tiers:TiersIdentification;
+          try {tiers=await firstValueFrom(this.api.creerTiersIdentification({typeTiers:d.typeTiers,roles:[d.role], actif: d.actif === 'oui', pieceRapprochementAutorisee: d.pieceRapprochementAutorisee === 'oui',
+            ...(d.typeTiers==='ORGANISATION'?{raisonSociale:d.raisonSociale.trim(),natureOrganisation:d.nature,nomCommercial:d.nomCommercial.trim() || d.raisonSociale.trim()}:{nom:d.nom.trim(),prenom:d.prenom.trim(),naturePersonne:d.nature}),
+            ...(d.role==='MARCHAND'?{categorieMarchand:d.categorieMarchand}:{}),}));}
+          catch(e){if(e instanceof HttpErrorResponse && [400,401,403,404,422].includes(e.status)){this.sauvegarderRepriseIdentification(d,false);this.identification.update(x=>x?{...x,creationIncertaine:false}:x);}throw e;}
+          // Conserver l’ID avant tout autre appel, même si le contexte vient de changer.
+          d.tiersId=tiers.id;d.nomTiers=this.nomIdentification(tiers);d.tiersCree=true;d.creationIncertaine=false;
+          if(contexte===this.contexteIdentification())this.identification.set({...d,nouveau:false});
+          sessionStorage.setItem(`wavy-identification:${contexte}:${d.operationId}`,JSON.stringify({tiersId:tiers.id,motif:d.motif,incertain:false}));
+          verifier();this.identification.set({...d,nouveau:false});
+        } else {
+          const tiers=await firstValueFrom(this.api.lireTiersIdentification(d.tiersId));verifier();
+          if(tiers.actif===false)throw new Error('Le tiers sélectionné est inactif.');d.nomTiers=this.nomIdentification(tiers);
+        }
+        this.sauvegarderRepriseIdentification(d,false);
+        if(!regle) {
+          regle=await firstValueFrom(this.api.enregistrerRegleIdentification(d.tiersId!,d.motif.trim()));verifier();
+          if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new Error('La règle enregistrée doit être vérifiée avant association.');
+        }
       }
       if(ligne.operation.tiersId!==d.tiersId) {
         const bilan=await firstValueFrom(this.api.confirmerAssistant({etape:'TIERS',categorie:'CARTE',perimetre:{...this.filtresConsultation(),operationIds:[d.operationId]},confirmation:true,
-          selections:[{operationId:d.operationId,candidatCle:`MANUEL:${d.tiersId}`,pieceId:null,tiersId:d.tiersId!,montant:0,confirmerNature:false,verifierJustificatif:true,confirmerAffectation:false}]}));verifier();
+          selections:[{operationId:d.operationId,candidatCle: certaine?.cle ?? `MANUEL:${d.tiersId}`,pieceId:null,tiersId:d.tiersId!,montant:0,confirmerNature:false,verifierJustificatif:true,confirmerAffectation:false}]}));verifier();
         if(bilan.reussis!==1 || !bilan.lignes.some(l=>l.operationId===d.operationId && l.statut==='SUCCES'))throw new Error(bilan.lignes[0]?.message || 'Association non confirmée. Reprenez avec ce même tiers.');
       }
       const mettreAJour=(op:OperationBancaire)=>op.id===d.operationId?{...op,tiersId:d.tiersId!,tiersReconnu:d.nomTiers}:op;

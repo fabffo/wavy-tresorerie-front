@@ -463,10 +463,11 @@
                 <h4>{{ operation.dateOperation }} · {{ operation.libelle }} · {{ montant(montantSigne(operation)) }}</h4>
                     @if (ligneAssistant(operation.id); as ligne) {
                       @if (etapeAssistant() === 'TIERS') {
+                        @let certaine = regleCertaine(ligne);
                         @for (c of ligne.candidats; track c.cle) {
                           <label class="bank-tier-choice">
                             <input type="radio" [name]="'tiers-' + operation.id" [value]="c.tiersId"
-                              [disabled]="loading() || ligne.bloquee"
+                              [disabled]="loading() || ligne.bloquee || (!!certaine && certaine.tiersId !== c.tiersId)"
                               [checked]="identification()?.operationId === operation.id && identification()?.tiersId === c.tiersId"
                               (change)="choisirPropositionIdentification(ligne,c)" />
                             <span>{{ c.nomTiers }} @if (c.sur) { <em>· règle bancaire certaine</em> }</span>
@@ -532,7 +533,10 @@
                                 <label>Catégorie marchand <select [value]="d.categorieMarchand" [disabled]="loading()" (change)="modifierIdentification('categorieMarchand',$any($event.target).value)"><option value="">Choisir</option><option value="AUTRE">Autre</option><option value="INFORMATIQUE">Informatique</option><option value="RESTAURANT">Restaurant</option><option value="TRANSPORT_PUBLIC">Transport public</option></select></label>
                               }
                             }
-                            <label>Motif CONTIENT <input [value]="d.motif" maxlength="200" [disabled]="loading()" (input)="modifierIdentification('motif',$any($event.target).value)" /></label>
+                            @let ligneIdentification = ligneAssistant(operation.id);
+                            @if (!ligneIdentification || regleCertaine(ligneIdentification)?.tiersId !== d.tiersId) {
+                              <label>Motif CONTIENT <input [value]="d.motif" maxlength="200" [disabled]="loading()" (input)="modifierIdentification('motif',$any($event.target).value)" /></label>
+                            }
                             <button type="button" class="primary" [disabled]="loading() || chargementIdentification()" (click)="validerIdentification()">Valider</button>
                           }
                           @for(tiers of doublonsIdentification(); track tiers.id) {
@@ -547,7 +551,7 @@
                       }
                     }
                 @if (ligneAssistant(operation.id); as ligne) {
-                  @if (!ligne.bloquee && etapeAssistant() === 'TIERS') {
+                  @if (!ligne.bloquee && etapeAssistant() === 'TIERS' && !regleCertaine(ligne)) {
                     <button type="button" [disabled]="loading()" (click)="examinerOperation(ligne)">{{ ligne.candidats.length ? 'Aucun de ces tiers' : 'Rechercher ou créer un tiers' }}</button>
                   } @else if (etapeAssistant() !== 'TIERS' && ligne.candidats.length && !ligne.bloquee) {
                     <button type="button" [disabled]="loading()" (click)="examinerOperation(ligne)">Examiner les propositions</button>

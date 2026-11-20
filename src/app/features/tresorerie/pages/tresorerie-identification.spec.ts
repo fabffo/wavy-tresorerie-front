@@ -256,6 +256,33 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
 
+ it('associe la règle certaine du salarié sans permettre une création concurrente',async()=>{
+  const fixture=TestBed.createComponent(TresoreriePage);
+  page=fixture.componentInstance;
+  page.onglet.set('operations');
+  fixture.detectChanges();
+  const niengele={...candidat,cle:'REGLE_BANCAIRE:4',tiersId:4,nomTiers:'Jean-Marie Niengele',typeTiers:'SALARIE'} as CandidatAssistant;
+  const l={...ligne,operation:{...operation,libelle:'Virement émis - VIR INST vers JEAN MARIE NIENGEL frais Rouen JMNiengele dec25'},candidats:[niengele]};
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));
+  page.previsualiserAssistant();
+  fixture.detectChanges();
+  expect(fixture.nativeElement.textContent).toContain('Jean-Marie Niengele');
+  expect(fixture.nativeElement.textContent).not.toContain('Aucun de ces tiers');
+  expect(fixture.nativeElement.textContent).not.toContain('Aucune correspondance');
+  expect(page.identificationsCertaines().map(x=>x.candidat.tiersId)).toEqual([4]);
+  page.ouvrirValidationTiers(l);
+  expect(page.identification()).toBeNull();
+
+  page.choisirPropositionIdentification(l,niengele);
+  await page.validerIdentification();
+  expect(api['reglesIdentification']).not.toHaveBeenCalled();
+  expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({
+    selections:[expect.objectContaining({tiersId:4,candidatCle:'REGLE_BANCAIRE:4',confirmerNature:false})],
+  }));
+  expect(api['creerTiersIdentification']).not.toHaveBeenCalled();
+  expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
+ });
+
  it('garde le choix manuel en cas de règles concurrentes sans créer une règle supplémentaire',async()=>{
   const l={...ligne,operation:{...operation,libelle:'VIR BENOME BENOIT SIRA'},candidats:[{...candidat,nomTiers:'Benome',sur:false},{...candidat,cle:'T:59',tiersId:59,nomTiers:'Benoit Sira',sur:false}]};
   api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));api['lireTiersIdentification'].mockReturnValue(of({...tiers,raisonSociale:'Benome'}));
