@@ -815,8 +815,14 @@
                   </td>
                   <td class="actions-column">
                     <div class="actions">
-                      <button type="button" class="primary" [disabled]="!actionRapprochementPossible(rapprochement)" (click)="validerRapprochement(rapprochement)">Valider</button>
-                      <button type="button" class="danger" [disabled]="!actionRapprochementPossible(rapprochement)" (click)="annulerRapprochement(rapprochement)">Annuler</button>
+                      @if (actionRapprochementPossible(rapprochement)) {
+                        <button type="button" class="primary" (click)="validerRapprochement(rapprochement)">Valider</button>
+                        <button type="button" class="danger" (click)="annulerRapprochement(rapprochement)">Annuler</button>
+                      } @else if (rapprochement.statut === 'VALIDE') {
+                        <button type="button" class="danger" [disabled]="loading()" (click)="annulerRapprochementValide(rapprochement)">Annuler le rapprochement</button>
+                      } @else if (rapprochement.dateValidation) {
+                        <button type="button" [disabled]="loading()" (click)="rapprocherOperationAnnulee(rapprochement)">Rapprocher manuellement</button>
+                      }
                     </div>
                   </td>
                 </tr>

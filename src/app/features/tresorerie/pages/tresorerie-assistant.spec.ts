@@ -6,7 +6,7 @@ import { TresoreriePage } from './tresorerie.page';
 import { TresorerieApiService } from '../../../core/services/tresorerie-api.service';
 import { ContexteService } from '../../../core/services/contexte.service';
 import { WavyShellBridgeService } from '../../../core/services/wavy-shell-bridge.service';
-import { ApercuAssistant, CandidatAssistant, LigneAssistant, OperationBancaire, EtapeAssistant } from '../models/tresorerie.model';
+import { ApercuAssistant, CandidatAssistant, LigneAssistant, OperationBancaire, EtapeAssistant, RapprochementBancaire } from '../models/tresorerie.model';
 
 const initialiserPage=TresoreriePage.prototype.ngOnInit;
 const chargerPage=TresoreriePage.prototype.chargerOperations;
@@ -46,6 +46,32 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     page.etapeAssistant.set(etape);page.previsualiserAssistant();
   }
   function selectionner(l = ligne, c = candidat) { page.selectionnerAssistant(l,c,true); }
+
+  it('annule une ligne validée après confirmation puis ouvre le choix manuel sur son opération', () => {
+    const rapprochement = { id: 42, operationBancaireId: operation.id, statut: 'VALIDE' } as RapprochementBancaire;
+    const annule = { ...rapprochement, statut: 'ANNULE' } as RapprochementBancaire;
+    const reponse = new Subject<RapprochementBancaire>();
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    api['annulerRapprochementValide'] = vi.fn(() => reponse);
+    api['operation'] = vi.fn(() => of(operation));
+    api['facturesCandidates'] = vi.fn(() => of([]));
+    api['rapprochements'] = vi.fn(() => of([annule]));
+    page.rapprochements.set([rapprochement]);
+
+    page.annulerRapprochementValide(rapprochement);
+    expect(api['annulerRapprochementValide']).not.toHaveBeenCalled();
+    page.annulerRapprochementValide(rapprochement);
+    page.annulerRapprochementValide(rapprochement);
+    expect(confirmation).toHaveBeenCalledTimes(2);
+    expect(api['annulerRapprochementValide']).toHaveBeenCalledExactlyOnceWith(42);
+    expect(page.rapprochements()).toEqual([rapprochement]);
+
+    reponse.next(annule);
+    expect(page.rapprochements()).toEqual([annule]);
+    page.rapprocherOperationAnnulee(annule);
+    expect(api['operation']).toHaveBeenCalledExactlyOnceWith(operation.id);
+    expect(api['facturesCandidates']).toHaveBeenCalledExactlyOnceWith(operation.id);
+  });
 
   it('sélectionne manuellement une paie sans confondre une pièce achat du même identifiant', () => {
     api['facturesCandidates'] = vi.fn(() => of([

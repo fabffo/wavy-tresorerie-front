@@ -249,6 +249,10 @@ export class TresorerieApiService {
     return this.http.post<RapprochementBancaire>(`${this.baseUrl}/rapprochements-bancaires/${id}/annuler`, {});
   }
 
+  annulerRapprochementValide(id: number) {
+    return this.http.post<RapprochementBancaire>(`${this.baseUrl}/rapprochements-bancaires/${id}/annuler-valide`, {});
+  }
+
   validerRapprochementsProposes() {
     return this.http.post<RapprochementPropositionsResultat>(`${this.baseUrl}/rapprochements-bancaires/valider-proposes`, {});
   }

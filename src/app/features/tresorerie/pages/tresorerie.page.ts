@@ -1725,6 +1725,53 @@ export class TresoreriePage implements OnInit {
     });
   }
 
+  annulerRapprochementValide(rapprochement: RapprochementBancaire): void {
+    if (this.loading() || rapprochement.statut !== 'VALIDE'
+      || !confirm('Annuler ce rapprochement et le paiement associé ?')) return;
+
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.error.set(null);
+    this.message.set(null);
+    this.api.annulerRapprochementValide(rapprochement.id).subscribe({
+      next: resultat => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.rapprochements.update(items => items.map(item => item.id === resultat.id ? resultat : item));
+        this.chargerRapprochements();
+        this.chargerOperations(() => this.loading.set(false));
+        this.message.set('Rapprochement annulé. Les soldes ont été actualisés.');
+        this.api.dashboard().subscribe({ next: dashboard => {
+          if (contexte === this.cleContexteCartes()) this.dashboard.set(dashboard);
+        } });
+      },
+      error: erreur => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.error.set(erreur?.error?.message || getHttpErrorMessage(erreur));
+        this.loading.set(false);
+      },
+    });
+  }
+
+  rapprocherOperationAnnulee(rapprochement: RapprochementBancaire): void {
+    if (this.loading() || rapprochement.statut !== 'ANNULE') return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.error.set(null);
+    this.api.operation(rapprochement.operationBancaireId).subscribe({
+      next: operation => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.loading.set(false);
+        if (this.rapprochementManuelPossible(operation)) this.ouvrirRapprochementManuel(operation);
+        else this.error.set('Cette opération n’a plus de disponible pour un rapprochement manuel.');
+      },
+      error: erreur => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.error.set(getHttpErrorMessage(erreur));
+        this.loading.set(false);
+      },
+    });
+  }
+
   validerToutesPropositions(): void {
     const total = this.rapprochementsProposes().length;
     if (total === 0 || !confirm('Valider toutes les propositions de rapprochement ?')) {
