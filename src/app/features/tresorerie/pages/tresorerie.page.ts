@@ -65,6 +65,8 @@ type ChampOperation =
   | 'statutClassification'
   | 'statutRapprochement';
 
+class ErreurMotifBancaire extends Error {}
+
 @Component({
   selector: 'app-tresorerie-page',
   imports: [DatePipe, ReactiveFormsModule],
@@ -519,6 +521,7 @@ export class TresoreriePage implements OnInit {
 
   readonly identification = signal<BrouillonIdentification|null>(null);
   readonly erreurIdentification = signal<string|null>(null);
+  readonly erreurMotifIdentification = signal<string | null>(null);
   readonly rolesIdentification = signal<string[]>([]);
   readonly naturesOrganisationIdentification = signal<string[]>([]);
   readonly naturesPersonneIdentification = signal<string[]>([]);
@@ -540,7 +543,10 @@ export class TresoreriePage implements OnInit {
   nomIdentification(t:TiersIdentification):string { return t.raisonSociale || [t.prenom,t.nom].filter(Boolean).join(' ') || t.nomNormalise || `Tiers ${t.id}`; }
   modifierIdentification(champ:keyof BrouillonIdentification,valeur:string):void {
     if(this.loading())return;
-    if(champ==='motif')this.motifIdentificationModifie=true;
+    if(champ==='motif') {
+      this.motifIdentificationModifie = true;
+      this.erreurMotifIdentification.set(null);
+    }
     this.identification.update(d=>d ? {...d,[champ]:valeur} : d);this.erreurIdentification.set(null);
   }
   private regleCorrespondante(r:RegleBancaireIdentification,libelle:string):boolean {
@@ -550,13 +556,13 @@ export class TresoreriePage implements OnInit {
   private verifierReglesIdentification(regles:RegleBancaireIdentification[],d:BrouillonIdentification,libelle:string):RegleBancaireIdentification|null {
     const motif=this.normaliserIdentification(d.motif);
     const adaptee=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.actif && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && this.regleCorrespondante(r,libelle));
-    if(!adaptee && (!this.motifBancaireValide(d.motif) || !this.normaliserIdentification(libelle).includes(motif)))throw new Error('Corrigez le motif : utilisez un nom distinctif présent dans le libellé, sans date ni référence variable.');
+    if(!adaptee && (!this.motifBancaireValide(d.motif) || !this.normaliserIdentification(libelle).includes(motif)))throw new ErreurMotifBancaire('Corrigez le motif : utilisez un nom distinctif présent dans le libellé, sans date ni référence variable.');
     const actives=regles.filter(r=>r.actif && r.typeRegle==='OPERATION_BANCAIRE');
     const conflit=actives.find(r=>r.tiersId!==d.tiersId && (this.regleCorrespondante(r,libelle)
       || (r.typeMotif==='CONTIENT' && (motif.includes(this.normaliserIdentification(r.motif)) || this.normaliserIdentification(r.motif).includes(motif)))));
-    if(conflit && !adaptee)throw new Error('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
+    if(conflit && !adaptee)throw new ErreurMotifBancaire('Ce motif entre en conflit avec la règle d’un autre tiers. Précisez le motif ou corrigez la règle existante.');
     const equivalente=regles.find(r=>r.typeRegle==='OPERATION_BANCAIRE' && r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && r.typeMotif==='CONTIENT');
-    if(equivalente && !equivalente.actif)throw new Error('Une règle équivalente est désactivée ; elle ne sera pas réactivée automatiquement.');
+    if(equivalente && !equivalente.actif)throw new ErreurMotifBancaire('Une règle équivalente est désactivée ; elle ne sera pas réactivée automatiquement.');
     return actives.find(r=>r.tiersId===d.tiersId && this.normaliserIdentification(r.motif)===motif && this.regleCorrespondante(r,libelle)) ?? null;
   }
 
@@ -576,6 +582,7 @@ export class TresoreriePage implements OnInit {
     if (this.loading() || ligne.bloquee || ligne.operation.tiersId || (certaine && certaine.tiersId !== tiersId)) return;
     const sequence=++this.sequenceIdentification,contexte=this.contexteIdentification();
     this.motifIdentificationModifie=false;
+    this.erreurMotifIdentification.set(null);
     this.detailAssistant.set(null);this.menuOperation.set(null);this.erreurIdentification.set(null);this.doublonsIdentification.set([]);
     const candidat=ligne.candidats.find(c=>c.tiersId===tiersId);
     let reprise:{tiersId?:number;motif?:string;incertain?:boolean}|null=null;
@@ -584,16 +591,15 @@ export class TresoreriePage implements OnInit {
     const id=tiersId ?? reprise?.tiersId ?? null;
     const motifRepriseBrut=(!tiersId || tiersId===reprise?.tiersId)?reprise?.motif:undefined;
     const motifReprise=motifRepriseBrut && !this.motifDunAutreCandidat(motifRepriseBrut,id,ligne) ? motifRepriseBrut : undefined;
-    let motifPropose=motifReprise || this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? '');
+    const marchand = id ? '' : this.marchandDepuisPaiementCarte(ligne.operation.libelle);
+    let motifPropose=motifReprise || marchand || this.proposerMotifBancaire(ligne.operation.libelle,candidat?.nomTiers ?? '');
     if(!motifReprise && this.motifDunAutreCandidat(motifPropose,id,ligne))motifPropose='';
     this.identification.set({operationId:ligne.operation.id,tiersId:id,nomTiers:candidat?.nomTiers ?? '',
       motif:motifPropose,nouveau:!id,
-      typeTiers:'ORGANISATION',raisonSociale:'',nom:'',prenom:'',role:'',nature:'',nomCommercial:'',pieceRapprochementAutorisee:'non',actif:'oui',categorieMarchand:'',
+      typeTiers:'ORGANISATION',raisonSociale:marchand,nom:'',prenom:'',role:marchand ? 'MARCHAND' : '',
+      nature:marchand ? 'ENTREPRISE' : '',nomCommercial:marchand,pieceRapprochementAutorisee:'non',actif:'oui',
+      categorieMarchand:marchand ? 'AUTRE' : '',
       creationIncertaine:reprise?.incertain ?? false,tiersCree:!!reprise?.tiersId});
-    if (certaine) {
-      this.chargementIdentification.set(false);
-      return;
-    }
     this.chargementIdentification.set(true);
     this.api.reglesIdentification().subscribe({next:regles=>{
       if(sequence!==this.sequenceIdentification || contexte!==this.contexteIdentification())return;
@@ -662,6 +668,7 @@ export class TresoreriePage implements OnInit {
     const d={...initial},contexte=this.contexteIdentification(),vue=this.cleAssistant();
     const verifier=()=>{if(!this.contexteService.tenantId() || !this.contexteService.societeCouranteId() || !this.contexteService.utilisateurId?.())throw new Error('Contexte utilisateur incomplet.');if(contexte!==this.contexteIdentification() || vue!==this.cleAssistant() || this.etapeAssistant()!=='TIERS')throw new Error('Le contexte ou la société a changé. Revenez à l’opération.');};
     this.loading.set(true);this.erreurIdentification.set(null);
+    this.erreurMotifIdentification.set(null);
     try {
       verifier();
       if (!d.tiersId && d.actif === 'non') throw new Error('Activez le nouveau tiers pour l’associer à cette opération.');
@@ -675,11 +682,15 @@ export class TresoreriePage implements OnInit {
         throw new Error('Une règle bancaire certaine identifie déjà ce tiers. Actualisez les propositions.');
       }
       if (certaine) {
+        if (this.motifIdentificationModifie && (!this.motifBancaireValide(d.motif)
+            || !this.normaliserIdentification(ligne.operation.libelle).includes(this.normaliserIdentification(d.motif)))) {
+          throw new ErreurMotifBancaire('Corrigez le motif : utilisez un nom distinctif présent dans le libellé, sans date ni référence variable.');
+        }
         d.nomTiers = certaine.nomTiers;
       } else {
         const regles=await firstValueFrom(this.api.reglesIdentification());verifier();
         let regle=this.verifierReglesIdentification(regles,d,ligne.operation.libelle);
-        if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new Error('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
+        if(!regle && ligne.candidats.some(c=>c.tiersId!==d.tiersId && this.normaliserIdentification(c.nomTiers).includes(this.normaliserIdentification(d.motif))))throw new ErreurMotifBancaire('Ce motif pourrait reconnaître plusieurs tiers proposés. Précisez-le avant validation.');
         if(!d.tiersId) {
           const natures = d.typeTiers === 'ORGANISATION' ? this.naturesOrganisationIdentification() : this.naturesPersonneIdentification();
           if(!natures.includes(d.nature) || !d.role || !this.rolesIdentification().includes(d.role) || (d.typeTiers==='ORGANISATION'?!d.raisonSociale.trim():!d.nom.trim() || !d.prenom.trim()) || (d.role==='MARCHAND' && !d.categorieMarchand))throw new Error('Complétez le nom, le type, le rôle et les informations obligatoires.');
@@ -704,7 +715,7 @@ export class TresoreriePage implements OnInit {
         this.sauvegarderRepriseIdentification(d,false);
         if(!regle) {
           regle=await firstValueFrom(this.api.enregistrerRegleIdentification(d.tiersId!,d.motif.trim()));verifier();
-          if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new Error('La règle enregistrée doit être vérifiée avant association.');
+          if(!regle.actif || regle.tiersId!==d.tiersId || regle.typeRegle!=='OPERATION_BANCAIRE' || this.normaliserIdentification(regle.motif)!==this.normaliserIdentification(d.motif))throw new ErreurMotifBancaire('La règle enregistrée doit être vérifiée avant association.');
         }
       }
       if(ligne.operation.tiersId!==d.tiersId) {
@@ -719,8 +730,19 @@ export class TresoreriePage implements OnInit {
       this.identification.set(null);this.choixAssistant.set([]);this.menuOperation.set(null);
       sessionStorage.removeItem(this.cleRepriseIdentification(d.operationId));
       this.chargerOperations(undefined, true);
-    }catch(e){this.erreurIdentification.set(e instanceof Error && !('status' in e)?e.message:getHttpErrorMessage(e));}
-    finally{this.loading.set(false);}
+    } catch (e) {
+      if (e instanceof ErreurMotifBancaire) this.erreurMotifIdentification.set(e.message);
+      else this.erreurIdentification.set(e instanceof Error && !('status' in e) ? e.message : getHttpErrorMessage(e));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private marchandDepuisPaiementCarte(libelle: string): string {
+    // Format du relevé avec référence carte masquée, enseigne, lieu sur quatre lettres et date.
+    const paiement = libelle.trim().match(/^PAIEMENT PAR CARTE\s*[-–]\s*X\d{4}\s+(.+)\s+\p{L}{4}\s+\d{2}\/\d{2}(?:\/\d{4})?$/iu);
+    const marchand = paiement?.[1].trim().toUpperCase() ?? '';
+    return /\s/.test(marchand) && this.motifBancaireValide(marchand) ? marchand : '';
   }
 
   proposerMotifBancaire(libelle: string, nomTiers = ''): string {

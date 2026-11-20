@@ -511,7 +511,7 @@
                                 <select [value]="d.nature" [disabled]="loading()" (change)="modifierIdentification('nature',$any($event.target).value)">
                                   <option value="">Choisir</option>
                                   @for (nature of (d.typeTiers === 'ORGANISATION' ? naturesOrganisationIdentification() : naturesPersonneIdentification()); track nature) {
-                                    <option [value]="nature">{{ nature }}</option>
+                                    <option [value]="nature" [selected]="d.nature === nature">{{ nature }}</option>
                                   }
                                 </select>
                               </label>
@@ -528,15 +528,26 @@
                                   <option value="oui">Oui</option><option value="non">Non</option>
                                 </select>
                               </label>
-                              <label>Rôle <select [value]="d.role" [disabled]="loading()" (change)="modifierIdentification('role',$any($event.target).value)"><option value="">Choisir</option>@for(role of rolesIdentification(); track role){<option [value]="role">{{ role }}</option>}</select></label>
+                              <label>Rôle <select [value]="d.role" [disabled]="loading()" (change)="modifierIdentification('role',$any($event.target).value)"><option value="">Choisir</option>@for(role of rolesIdentification(); track role){<option [value]="role" [selected]="d.role === role">{{ role }}</option>}</select></label>
                               @if(d.role === 'MARCHAND') {
                                 <label>Catégorie marchand <select [value]="d.categorieMarchand" [disabled]="loading()" (change)="modifierIdentification('categorieMarchand',$any($event.target).value)"><option value="">Choisir</option><option value="AUTRE">Autre</option><option value="INFORMATIQUE">Informatique</option><option value="RESTAURANT">Restaurant</option><option value="TRANSPORT_PUBLIC">Transport public</option></select></label>
                               }
                             }
-                            @let ligneIdentification = ligneAssistant(operation.id);
-                            @if (!ligneIdentification || regleCertaine(ligneIdentification)?.tiersId !== d.tiersId) {
-                              <label>Motif CONTIENT <input [value]="d.motif" maxlength="200" [disabled]="loading()" (input)="modifierIdentification('motif',$any($event.target).value)" /></label>
-                            }
+                          }
+                          <label>Motif bancaire (CONTIENT)
+                            <input [value]="d.motif" maxlength="200" [disabled]="loading()"
+                              [attr.aria-invalid]="erreurMotifIdentification() ? 'true' : null"
+                              [attr.aria-describedby]="erreurMotifIdentification() ? 'erreur-motif-bancaire' : null"
+                              (input)="modifierIdentification('motif',$any($event.target).value)" />
+                          </label>
+                          @if (erreurMotifIdentification(); as erreur) {
+                            <p id="erreur-motif-bancaire" class="text-danger" role="alert">{{ erreur }}</p>
+                          }
+                          @let ligneIdentification = ligneAssistant(operation.id);
+                          @if (ligneIdentification && d.tiersId && regleCertaine(ligneIdentification)?.tiersId === d.tiersId) {
+                            <small>La validation réutilise la règle bancaire certaine.</small>
+                          }
+                          @if (!d.creationIncertaine || d.tiersId) {
                             <button type="button" class="primary" [disabled]="loading() || chargementIdentification()" (click)="validerIdentification()">Valider</button>
                           }
                           @for(tiers of doublonsIdentification(); track tiers.id) {

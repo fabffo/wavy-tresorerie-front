@@ -87,19 +87,19 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
   page.choisirExistantIdentification(tiers);await page.validerIdentification();expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);expect(api['creerTiersIdentification']).not.toHaveBeenCalled();
  });
  it('bloque un motif ambigu et permet de le corriger sur place',async()=>{
-  ouvrir();page.modifierIdentification('motif','VIREMENT');await page.validerIdentification();expect(page.erreurIdentification()).toContain('Corrigez');expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
+  ouvrir();page.modifierIdentification('motif','VIREMENT');await page.validerIdentification();expect(page.erreurMotifIdentification()).toContain('Corrigez');expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
   page.modifierIdentification('motif','ELIOS DIGITAL SASU');await page.validerIdentification();expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);
  });
  it('refuse un motif trop large entre plusieurs identités sans règle préalable',async()=>{
   ouvrir();page.modifierIdentification('motif','ELIOS');api['previsualiserAssistant'].mockReturnValue(of(reponse([{...ligne,candidats:[candidat,{...candidat,tiersId:10,cle:'T:10',nomTiers:'ELIOS CONSEIL',sur:false}]}])));
-  await page.validerIdentification();expect(page.erreurIdentification()).toContain('plusieurs tiers');expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  await page.validerIdentification();expect(page.erreurMotifIdentification()).toContain('plusieurs tiers');expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
  it('refuse un conflit de règle avec un autre tiers avant toute création',async()=>{
   nouvelle();api['reglesIdentification'].mockReturnValue(of([{...regle,tiersId:10,motif:'ELIOS'}]));await page.validerIdentification();
-  expect(page.erreurIdentification()).toContain('conflit');expect(api['creerTiersIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  expect(page.erreurMotifIdentification()).toContain('conflit');expect(api['creerTiersIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).not.toHaveBeenCalled();
  });
  it('réutilise une règle équivalente ponctuée et ne la réactive pas si elle est désactivée',async()=>{
-  ouvrir();api['reglesIdentification'].mockReturnValue(of([{...regle,motif:'ELIOS-DIGITAL-SASU',actif:false}]));await page.validerIdentification();expect(page.erreurIdentification()).toContain('désactivée');
+  ouvrir();api['reglesIdentification'].mockReturnValue(of([{...regle,motif:'ELIOS-DIGITAL-SASU',actif:false}]));await page.validerIdentification();expect(page.erreurMotifIdentification()).toContain('désactivée');
   api['reglesIdentification'].mockReturnValue(of([{...regle,motif:'ELIOS-DIGITAL-SASU'}]));await page.validerIdentification();expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1);
  });
  it('reprend après une création réussie puis une réponse d’association perdue, sans doublon',async()=>{
@@ -141,10 +141,59 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  it('présente Adobe.com comme motif stable et ne propose pas de mot bancaire générique',()=>{
   expect(page.proposerMotifBancaire('Adobe.com Saggart','Adobe Systems Software Ireland Ltd')).toBe('ADOBE.COM');expect(page.motifBancaireValide('FACTURE')).toBe(false);
  });
+ it('préremplit le marchand, affiche le motif sous erreur et conserve une seule validation', async () => {
+  const l: LigneAssistant = {
+   ...ligne,
+   operation: { ...operation, libelle: 'Paiement par carte - X5585 BOUCH LABOURDET BIAR 15/01', debit: 7.23, montant: 7.23 },
+   candidats: [],
+  };
+  const fixture = TestBed.createComponent(TresoreriePage);
+  page = fixture.componentInstance;
+  page.onglet.set('operations');
+  api['previsualiserAssistant'].mockReturnValue(of(reponse([l])));
+  api['creerTiersIdentification'].mockReturnValue(of({ ...tiers, raisonSociale: 'BOUCH LABOURDET', roles: ['MARCHAND'] }));
+  api['enregistrerRegleIdentification'].mockReturnValue(of({ ...regle, motif: 'BOUCH LABOURDET' }));
+  fixture.detectChanges();
+  page.previsualiserAssistant();
+  page.ouvrirValidationTiers(l);
+  fixture.detectChanges();
+
+  expect(page.identification()).toMatchObject({
+   typeTiers: 'ORGANISATION', nature: 'ENTREPRISE', role: 'MARCHAND', actif: 'oui',
+   motif: 'BOUCH LABOURDET', raisonSociale: 'BOUCH LABOURDET', nomCommercial: 'BOUCH LABOURDET',
+   pieceRapprochementAutorisee: 'non',
+  });
+  const formulaire: HTMLElement = fixture.nativeElement.querySelector('[aria-label="Identification du tiers"]');
+  const libelleMotif = Array.from(formulaire.querySelectorAll('label')).find(label => label.textContent?.includes('Motif bancaire (CONTIENT)'))!;
+  const champ = libelleMotif.querySelector('input')!;
+  expect(champ.value).toBe('BOUCH LABOURDET');
+  champ.value = 'X5585';
+  champ.dispatchEvent(new Event('input'));
+  await page.validerIdentification();
+  fixture.detectChanges();
+  expect(champ.getAttribute('aria-invalid')).toBe('true');
+  expect(libelleMotif.nextElementSibling?.textContent).toContain('Corrigez le motif');
+  expect(api['creerTiersIdentification']).not.toHaveBeenCalled();
+
+  champ.value = 'BOUCH LABOURDET';
+  champ.dispatchEvent(new Event('input'));
+  const boutons = Array.from(formulaire.querySelectorAll('button')).filter(bouton => bouton.textContent?.trim() === 'Valider');
+  expect(boutons).toHaveLength(1);
+  boutons[0].click();
+  await vi.waitFor(() => expect(api['confirmerAssistant']).toHaveBeenCalledTimes(1));
+  expect(api['listerTiersIdentification']).toHaveBeenCalledWith('BOUCH LABOURDET');
+  expect(api['creerTiersIdentification']).toHaveBeenCalledWith(expect.objectContaining({
+   typeTiers: 'ORGANISATION', natureOrganisation: 'ENTREPRISE', raisonSociale: 'BOUCH LABOURDET',
+   nomCommercial: 'BOUCH LABOURDET', roles: ['MARCHAND'], actif: true, pieceRapprochementAutorisee: false,
+  }));
+  expect(api['enregistrerRegleIdentification']).toHaveBeenCalledWith(9, 'BOUCH LABOURDET');
+ });
+
  it('affiche un seul tableau et un formulaire dans sa ligne, sans fiche Tiers ni messages comptables',()=>{
   const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();page.previsualiserAssistant();ouvrir();fixture.detectChanges();
   const html:HTMLElement=fixture.nativeElement;expect(html.querySelectorAll('table')).toHaveLength(1);expect(html.querySelectorAll('thead th')).toHaveLength(8);
   const editeur=html.querySelector('[aria-label="Identification du tiers"]');expect(editeur).not.toBeNull();expect(editeur?.textContent).toContain('Valider');
+  expect(editeur?.textContent).toContain('Motif bancaire (CONTIENT)');
   expect(editeur?.querySelector('input[type="checkbox"]')).toBeNull();expect(editeur?.textContent).not.toMatch(/disponible|échéance|justificatif|nature actuelle|fiche Tiers/i);expect(html.querySelector('[role="dialog"]')).toBeNull();
  });
  it.each([
@@ -275,7 +324,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
 
   page.choisirPropositionIdentification(l,niengele);
   await page.validerIdentification();
-  expect(api['reglesIdentification']).not.toHaveBeenCalled();
+  expect(api['reglesIdentification']).toHaveBeenCalledTimes(1);
   expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({
     selections:[expect.objectContaining({tiersId:4,candidatCle:'REGLE_BANCAIRE:4',confirmerNature:false})],
   }));
