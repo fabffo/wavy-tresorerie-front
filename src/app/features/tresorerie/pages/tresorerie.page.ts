@@ -157,6 +157,13 @@ export class TresoreriePage implements OnInit {
     PARTIELLE: 'Partielle', TIERS_IDENTIFIE: 'Tiers identifié',
   };
   readonly rolesTiersDisponibles = signal<{ code: string; libelle: string }[]>([]);
+  readonly resumeFiltreRolesTiers = computed(() => {
+    const roles = this.filtresOperations().rolesTiers ?? [];
+    if (!roles.length) return 'Tous';
+    if (roles.length > 1) return `${roles.length} rôles`;
+    return this.rolesTiersDisponibles().find(role => role.code === roles[0])?.libelle
+      ?? this.libellesRolesTiers(roles);
+  });
   readonly colonnesOperations: Array<{ cle: OperationBancaireSortBy; libelle: string }> = [
     { cle: 'dateOperation', libelle: 'Date opération' },
     { cle: 'libelle', libelle: 'Libellé' },

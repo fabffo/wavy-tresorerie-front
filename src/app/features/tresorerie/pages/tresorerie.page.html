@@ -286,23 +286,28 @@
             <label>Tiers
               <input type="search" placeholder="Tous" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)" />
             </label>
-            <details>
-              <summary>Rôles du tiers
-                @if ((filtresOperations().rolesTiers?.length ?? 0) > 0) {
-                  ({{ filtresOperations().rolesTiers?.length }})
-                }
-              </summary>
-              @if (filtresOperations().rolesTiers?.length) {
-                <button type="button" (click)="effacerFiltreRolesTiers()">Effacer les rôles</button>
-              }
-              @for (role of rolesTiersDisponibles(); track role.code) {
-                <label class="d-block">
-                  <input type="checkbox" [checked]="filtresOperations().rolesTiers?.includes(role.code) ?? false"
-                    (change)="filtrerRolesTiers(role.code, $any($event.target).checked)" />
-                  {{ role.libelle }}
-                </label>
-              }
-            </details>
+            <div class="filtre-roles">
+              <span id="libelle-filtre-roles">Rôles du tiers</span>
+              <details #menuRoles class="position-relative" (keydown.escape)="menuRoles.open = false; declencheurRoles.focus()"
+                (focusout)="menuRoles.open = menuRoles.open && menuRoles.contains($any($event).relatedTarget)"
+                (document:pointerdown)="menuRoles.open = menuRoles.open && menuRoles.contains($any($event).target)">
+                <summary #declencheurRoles class="form-select pe-5 text-truncate" aria-labelledby="libelle-filtre-roles valeur-filtre-roles">
+                  <span id="valeur-filtre-roles">{{ resumeFiltreRolesTiers() }}</span>
+                </summary>
+                <div class="dropdown-menu show top-100 w-100 mt-1 p-2 overflow-auto" style="max-height: 15rem">
+                  @if (filtresOperations().rolesTiers?.length) {
+                    <button type="button" (click)="effacerFiltreRolesTiers(); declencheurRoles.focus()">Effacer les rôles</button>
+                  }
+                  @for (role of rolesTiersDisponibles(); track role.code) {
+                    <label class="check align-items-center fw-normal py-1">
+                      <input type="checkbox" [checked]="filtresOperations().rolesTiers?.includes(role.code) ?? false"
+                        (change)="filtrerRolesTiers(role.code, $any($event.target).checked)" />
+                      {{ role.libelle }}
+                    </label>
+                  }
+                </div>
+              </details>
+            </div>
             <label>Statut
               <select [value]="filtresOperations().statutConsultation || ''" (change)="filtrerOperations('statutConsultation', $any($event.target).value)">
                 <option value="">Tous</option>

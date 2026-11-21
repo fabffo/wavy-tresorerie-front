@@ -154,6 +154,34 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(page.filtresOperations().rolesTiers).toBeUndefined();
   });
 
+  it('résume la multisélection des rôles dans la liste déroulante', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    fixture.detectChanges();
+    page.rolesTiersDisponibles.set([
+      { code: 'MARCHAND', libelle: 'Marchand' }, { code: 'SALARIE', libelle: 'Salarié' },
+    ]);
+    vi.spyOn(page, 'chargerOperations').mockImplementation(fin => fin?.());
+    fixture.detectChanges();
+
+    const menu: HTMLDetailsElement = fixture.nativeElement.querySelector('.filtre-roles details');
+    const resume = () => menu.querySelector('summary')?.textContent?.trim();
+    expect(resume()).toBe('Tous');
+    menu.open = true;
+    const cases = menu.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    cases[1].click();
+    fixture.detectChanges();
+    expect(resume()).toBe('Salarié');
+    cases[0].click();
+    fixture.detectChanges();
+    expect(resume()).toBe('2 rôles');
+    expect(Array.from(cases).every(caseRole => caseRole.checked)).toBe(true);
+    menu.querySelector('button')?.click();
+    fixture.detectChanges();
+    expect(resume()).toBe('Tous');
+  });
+
   it('réutilise tout le périmètre filtré à la confirmation puis permet de changer de rôle', () => {
     const fixture = TestBed.createComponent(TresoreriePage);
     page = fixture.componentInstance;

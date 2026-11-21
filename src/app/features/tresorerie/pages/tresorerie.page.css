@@ -420,21 +420,16 @@ th {
   margin-bottom: 1rem;
 }
 
-label {
+label,
+.filtre-roles {
   display: grid;
   gap: .35rem;
   font-weight: 600;
 }
 
-input {
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font: inherit;
-  min-height: 2.4rem;
-  padding: .45rem .6rem;
-}
-
-select {
+input,
+select,
+.filtre-roles .form-select {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   font: inherit;
