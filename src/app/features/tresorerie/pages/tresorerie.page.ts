@@ -817,10 +817,19 @@ export class TresoreriePage implements OnInit {
     return `${ligne?.operation.libelle ?? ''} · ${candidat?.nomTiers ?? ''} · ${candidat?.numeroPiece ?? choix.candidatCle} · ${candidat?.typePiece ?? ''} · Banque ${ligne?.operation.dateOperation ?? ''}, pièce ${candidat?.datePiece ?? ''} · ${candidat?.avertissements.join(' ; ') ?? ''}`;
   }
 
-  resumeFiltresAssistant(): string {
-    const labels: Record<string,string> = {tiersReconnu:'Tiers reconnu',typeTiersReconnu:'Type de tiers',natureOperation:'Nature',statutClassification:'Classification',statutRapprochement:'Rapprochement'};
-    const valeurs = Object.entries(this.filtresOperations()).filter(([,v]) => v !== undefined && v !== '').map(([k,v]) => `${labels[k] || k} : ${v}`);
-    return valeurs.length ? valeurs.join(' ; ') : 'Aucun filtre : toutes les opérations de la société courante';
+  resumeFiltresAssistant(total: number): string {
+    const filtres = this.filtresConsultation();
+    const importActif = this.imports().find(releve => String(releve.id) === filtres.importId);
+    const roles = (filtres.rolesTiers ?? []).map(code =>
+      this.rolesTiersDisponibles().find(role => role.code === code)?.libelle ?? this.libellesRolesTiers([code]));
+    const tiers = filtres.tiersReconnu?.trim();
+    return [
+      importActif?.nomFichier || (this.choixImport() === 'tous' ? 'Tous les imports' : 'Dernier import'),
+      tiers ? `Tiers ${tiers}` : '',
+      roles.length ? roles.join(', ') : 'Tous les rôles',
+      filtres.statutConsultation ? this.statutsConsultation[filtres.statutConsultation] : '',
+      `${total.toLocaleString('fr-FR')} ${total === 1 ? 'opération' : 'opérations'}`,
+    ].filter(Boolean).join(' · ');
   }
 
   totalAssistant(): number { return this.choixAssistant().reduce((s, l) => s + l.choix.montant, 0); }

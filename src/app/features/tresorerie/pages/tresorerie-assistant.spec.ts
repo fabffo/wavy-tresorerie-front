@@ -154,6 +154,45 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(page.filtresOperations().rolesTiers).toBeUndefined();
   });
 
+  it('réutilise tout le périmètre filtré à la confirmation puis permet de changer de rôle', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    page.imports.set([{ id: 12, nomFichier: 'Import janvier 2026', dateImport: '2026-01-31' }] as ReturnType<typeof page.imports>);
+    page.choixImport.set('12');
+    page.filtresOperations.set({ tiersReconnu: 'Adobe', statutConsultation: 'TIERS_IDENTIFIE', rolesTiers: ['MARCHAND'] });
+    const autre = { ...ligne, operation: { ...operation, id: 22 }, candidats: [{ ...candidat, cle: 'P:ACHAT:11', pieceId: 11 }] };
+    const roles = [{ code: 'MARCHAND', libelle: 'Marchand' }, { code: 'CLIENT', libelle: 'Client' }];
+    const compteurs = { total: 18, rapprochees: 0, partielles: 0, tiersIdentifies: 18,
+      nonRapprochees: 0, sansTiers: 0, rolesTiersDisponibles: roles };
+    api['operations'] = vi.fn(() => of({ content: [operation], totalElements: 18, totalPages: 2 }));
+    api['compteursOperations'] = vi.fn(() => of(compteurs));
+    api['previsualiserAssistant'].mockReturnValue(of({ ...apercu, operationsPerimetre: 18, lignes: [ligne, autre] }));
+    fixture.detectChanges();
+    page.pageOperations.set(2);
+    page.chargerOperations();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Import janvier 2026 · Tiers Adobe · Marchand · Tiers identifié · 18 opérations');
+
+    page.changerEtapeAssistant('FOURNISSEURS');
+    page.preparerAssistant(true);
+    page.confirmerAssistant();
+    const filtres = { importId: '12', tiersReconnu: 'Adobe', statutConsultation: 'TIERS_IDENTIFIE', rolesTiers: ['MARCHAND'] };
+    expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({
+      perimetre: { ...filtres, operationIds: undefined, consultation: true },
+      selections: [expect.objectContaining({ operationId: 1 }), expect.objectContaining({ operationId: 22 })],
+    }));
+    expect(api['compteursOperations']).toHaveBeenLastCalledWith(filtres);
+    expect(api['operations']).toHaveBeenLastCalledWith(filtres, expect.objectContaining({ page: 1 }));
+
+    page.effacerFiltreRolesTiers();
+    page.filtrerRolesTiers('CLIENT', true);
+    page.changerEtapeAssistant('CLIENTS');
+    expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('CLIENTS', 'CARTE',
+      { ...filtres, rolesTiers: ['CLIENT'], operationIds: undefined, consultation: true });
+    expect(page.pageOperations()).toBe(1);
+  });
+
   it('Rapprocher limite explicitement le périmètre à la ligne sélectionnée', () => {
     page.ouvrirAssistant(operation);page.previsualiserAssistant();
     expect(api['previsualiserAssistant'].mock.calls[0][2].operationIds).toEqual([1]);expect(page.operationAssistant()).toBe(1);

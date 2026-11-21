@@ -326,6 +326,11 @@
           }
         }
         <h3 class="mx-3">Traitements</h3>
+        <p class="mx-3 mb-1 text-body-secondary small" aria-live="polite">
+          @if (compteursOperations(); as compteurs) {
+            {{ resumeFiltresAssistant(compteurs.total) }}
+          }
+        </p>
         <nav aria-label="Traitements bancaires" class="assistant-etapes mx-3">
           @for (etape of etapesAssistant; track etape.id) {
             <button type="button" [disabled]="loading() || (etape.id !== 'TIERS' && compteursOperations()?.sansTiers !== 0)"
