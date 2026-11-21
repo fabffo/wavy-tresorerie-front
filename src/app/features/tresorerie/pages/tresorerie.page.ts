@@ -145,7 +145,6 @@ export class TresoreriePage implements OnInit {
   private tiersRetourAssistant: number | null = null;
   private detailAttenduAssistant: number | null = null;
   readonly categorieAssistant = signal('CARTE');
-  readonly porteeAssistant = signal<'FILTRES' | 'PAGE'>('FILTRES');
   readonly operationAssistant = signal<number | null>(null);
   readonly apercuAssistant = signal<ApercuAssistant | null>(null);
   readonly detailAssistant = signal<LigneAssistant | null>(null);
@@ -157,10 +156,12 @@ export class TresoreriePage implements OnInit {
     RAPPROCHEE: 'Rapprochée', NON_RAPPROCHEE: 'Non rapprochée',
     PARTIELLE: 'Partielle', TIERS_IDENTIFIE: 'Tiers identifié',
   };
+  readonly rolesTiersDisponibles = signal<{ code: string; libelle: string }[]>([]);
   readonly colonnesOperations: Array<{ cle: OperationBancaireSortBy; libelle: string }> = [
     { cle: 'dateOperation', libelle: 'Date opération' },
     { cle: 'libelle', libelle: 'Libellé' },
     { cle: 'tiersReconnu', libelle: 'Tiers' },
+    { cle: 'rolesTiers', libelle: 'Rôle du tiers' },
     { cle: 'numeroPieceAssociee', libelle: 'Pièce associée' },
     { cle: 'montantSigne', libelle: 'Montant' },
     { cle: 'statutConsultation', libelle: 'Statut' },
@@ -245,12 +246,12 @@ export class TresoreriePage implements OnInit {
 
   private perimetreAssistant() {
     const id = this.operationAssistant();
-    const operationIds = id ? [id] : this.porteeAssistant() === 'PAGE' ? this.operationsPage().map(o => o.id) : undefined;
+    const operationIds = id ? [id] : undefined;
     return { ...this.filtresConsultation(), operationIds, consultation: true };
   }
 
   private cleAssistant(avecPage = true): string {
-    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.porteeAssistant(), this.operationAssistant(), avecPage ? this.perimetreAssistant() : this.filtresConsultation()]);
+    return JSON.stringify([this.cleContexteCartes(), this.etapeAssistant(), this.categorieAssistant(), this.operationAssistant(), avecPage ? this.perimetreAssistant() : this.filtresConsultation()]);
   }
 
   ouvrirAssistant(operation?: OperationBancaire): void {
@@ -264,7 +265,6 @@ export class TresoreriePage implements OnInit {
   changerEtapeAssistant(etape: EtapeAssistant): void {
     if (this.loading() || (etape !== 'TIERS' && this.compteursOperations()?.sansTiers !== 0)) return;
     this.operationAssistant.set(null);
-    this.porteeAssistant.set('FILTRES');
     this.etapeAssistant.set(etape);
     this.invaliderAssistant();
     this.previsualiserAssistant();
@@ -277,9 +277,6 @@ export class TresoreriePage implements OnInit {
 
   previsualiserAssistant(conserverBilan = false,pageCible=1): void {
     if (this.loading()) return;
-    if (this.porteeAssistant() === 'PAGE' && !this.operationAssistant() && !this.operationsPage().length) {
-      this.invaliderAssistant(); this.error.set('Cette page ne contient aucune opération à analyser.'); return;
-    }
     const contexte = this.cleAssistant(); const sequence = ++this.sequenceAssistant;
     this.choixAssistant.set([]); this.recapAssistant.set(null); this.detailAssistant.set(null); this.apercuAssistant.set(null);
     if (!conserverBilan) this.bilanAssistant.set(null);
@@ -1106,6 +1103,7 @@ export class TresoreriePage implements OnInit {
         this.api.imports().subscribe({ next: (data) => this.imports.set(data), error: (e) => this.error.set(getHttpErrorMessage(e)), complete: fin });
         break;
       case 'operations':
+        this.rolesTiersDisponibles.set([]);
         this.compteursOperations.set(null);
         this.operations.set([]);
         this.invaliderAssistant();
@@ -1265,7 +1263,10 @@ export class TresoreriePage implements OnInit {
     }).subscribe({
       next: ({ data, compteurs }) => {
         if (sequence !== this.sequenceOperations || contexte !== this.cleContexteCartes()) return;
-        if (compteurs) this.compteursOperations.set(compteurs);
+        if (compteurs) {
+          this.compteursOperations.set(compteurs);
+          this.rolesTiersDisponibles.set(compteurs.rolesTiersDisponibles ?? []);
+        }
         this.appliquerPageOperations(data);
         if (this.pageOperations() > this.totalPagesOperations()) {
           pageCorrigee=true;this.pageOperations.set(this.totalPagesOperations());
@@ -1295,7 +1296,9 @@ export class TresoreriePage implements OnInit {
     const triCourant = this.triOperations();
     this.triOperations.set({
       sortBy,
-      sortDirection: triCourant.sortBy === sortBy && triCourant.sortDirection === 'DESC' ? 'ASC' : 'DESC',
+      sortDirection: triCourant.sortBy === sortBy
+        ? (triCourant.sortDirection === 'DESC' ? 'ASC' : 'DESC')
+        : (sortBy === 'rolesTiers' ? 'ASC' : 'DESC'),
     });
     this.pageOperations.set(1);
     this.loading.set(true);
@@ -1310,8 +1313,25 @@ export class TresoreriePage implements OnInit {
     return tri.sortDirection === 'ASC' ? '▲' : '▼';
   }
 
-  filtrerOperations(cle: keyof FiltresOperations, valeur: string): void {
-    const filtres = { ...this.filtresOperations(), [cle]: valeur || undefined };
+  filtrerRolesTiers(role: string, selectionne: boolean): void {
+    const roles = new Set(this.filtresOperations().rolesTiers);
+    if (selectionne) roles.add(role);
+    else roles.delete(role);
+    this.appliquerFiltresOperations({
+      ...this.filtresOperations(),
+      rolesTiers: roles.size ? [...roles].sort() : undefined,
+    });
+  }
+
+  effacerFiltreRolesTiers(): void {
+    this.appliquerFiltresOperations({ ...this.filtresOperations(), rolesTiers: undefined });
+  }
+
+  filtrerOperations(cle: Exclude<keyof FiltresOperations, 'rolesTiers'>, valeur: string): void {
+    this.appliquerFiltresOperations({ ...this.filtresOperations(), [cle]: valeur || undefined });
+  }
+
+  private appliquerFiltresOperations(filtres: FiltresOperations): void {
     this.filtresOperations.set(filtres);
     this.pageOperations.set(1);
     this.loading.set(true);

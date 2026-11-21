@@ -126,19 +126,34 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
       expect.objectContaining({page:0}));
   });
 
-  it('transmet tous les filtres et distingue la page du périmètre complet', () => {
-    page.filtresOperations.set({ tiersReconnu: 'Adobe', natureOperation: 'FACTURE_FOURNISSEUR', statutRapprochement: 'NON_RAPPROCHEE' });
-    page.pageOperations.set(4);page.porteeAssistant.set('PAGE');page.previsualiserAssistant();
-    expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('FOURNISSEURS','CARTE',expect.objectContaining({ operationIds: [1], tiersReconnu: 'Adobe' }));
-    page.porteeAssistant.set('FILTRES');page.previsualiserAssistant();
-    expect(api['previsualiserAssistant'].mock.calls[1][2].operationIds).toBeUndefined();
-    expect(api['previsualiserAssistant'].mock.calls[1][2]).not.toHaveProperty('natureOperation');
-    expect(page.pageOperations()).toBe(4);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  it('transmet les rôles et les autres filtres sur tout le périmètre, même avec une page vide', () => {
+    page.filtresOperations.set({ tiersReconnu: 'Adobe', natureOperation: 'FACTURE_FOURNISSEUR',
+      statutRapprochement: 'NON_RAPPROCHEE', rolesTiers: ['MARCHAND', 'SALARIE'] });
+    page.pageOperations.set(4);
+    page.operations.set([]);
+    page.previsualiserAssistant();
+    const perimetre = api['previsualiserAssistant'].mock.calls[0][2];
+    expect(perimetre).toMatchObject({ tiersReconnu: 'Adobe', rolesTiers: ['MARCHAND', 'SALARIE'] });
+    expect(perimetre.operationIds).toBeUndefined();
+    expect(perimetre).not.toHaveProperty('natureOperation');
+    expect(page.pageOperations()).toBe(4);
   });
-  it('une page vide ne devient jamais un traitement de toutes les opérations', () => {
-    page.porteeAssistant.set('PAGE');page.operations.set([]);page.previsualiserAssistant();
-    expect(api['previsualiserAssistant']).not.toHaveBeenCalled();expect(page.error()).toContain('aucune opération');
+
+  it('filtre plusieurs rôles et trie le rôle en ordre croissant puis décroissant', () => {
+    page.pageOperations.set(3);
+    page.filtrerRolesTiers('SALARIE', true);
+    page.filtrerRolesTiers('MARCHAND', true);
+    expect(page.filtresOperations().rolesTiers).toEqual(['MARCHAND', 'SALARIE']);
+    expect(page.pageOperations()).toBe(1);
+    page.trierOperations('rolesTiers');
+    expect(page.triOperations()).toEqual({ sortBy: 'rolesTiers', sortDirection: 'ASC' });
+    page.trierOperations('rolesTiers');
+    expect(page.triOperations()).toEqual({ sortBy: 'rolesTiers', sortDirection: 'DESC' });
+    page.filtrerRolesTiers('SALARIE', false);
+    page.filtrerRolesTiers('MARCHAND', false);
+    expect(page.filtresOperations().rolesTiers).toBeUndefined();
   });
+
   it('Rapprocher limite explicitement le périmètre à la ligne sélectionnée', () => {
     page.ouvrirAssistant(operation);page.previsualiserAssistant();
     expect(api['previsualiserAssistant'].mock.calls[0][2].operationIds).toEqual([1]);expect(page.operationAssistant()).toBe(1);
@@ -239,7 +254,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   });
   it('pagine les opérations prévisualisées sans élargir le périmètre bancaire ni perdre les filtres', () => {
     const lignes=Array.from({length:26},(_,i)=>({...ligne,operation:{...operation,id:i+1}}));
-    page.filtresOperations.set({tiersReconnu:'Adobe'});page.taillePageOperations.set(25);page.porteeAssistant.set('FILTRES');
+    page.filtresOperations.set({tiersReconnu:'Adobe'});page.taillePageOperations.set(25);
     analyser('FOURNISSEURS',lignes);expect(page.operationsAffichees()).toHaveLength(25);page.pageResultatsAssistant.set(2);
     expect(page.operationsAffichees()).toHaveLength(1);expect(page.totalPagesResultatsAssistant()).toBe(2);
     expect(page.operationsPage().map(o=>o.id)).toEqual([1]);expect(page.filtresOperations()).toEqual({tiersReconnu:'Adobe'});

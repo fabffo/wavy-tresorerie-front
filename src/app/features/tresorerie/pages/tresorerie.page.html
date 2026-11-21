@@ -286,6 +286,23 @@
             <label>Tiers
               <input type="search" placeholder="Tous" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)" />
             </label>
+            <details>
+              <summary>Rôles du tiers
+                @if ((filtresOperations().rolesTiers?.length ?? 0) > 0) {
+                  ({{ filtresOperations().rolesTiers?.length }})
+                }
+              </summary>
+              @if (filtresOperations().rolesTiers?.length) {
+                <button type="button" (click)="effacerFiltreRolesTiers()">Effacer les rôles</button>
+              }
+              @for (role of rolesTiersDisponibles(); track role.code) {
+                <label class="d-block">
+                  <input type="checkbox" [checked]="filtresOperations().rolesTiers?.includes(role.code) ?? false"
+                    (change)="filtrerRolesTiers(role.code, $any($event.target).checked)" />
+                  {{ role.libelle }}
+                </label>
+              }
+            </details>
             <label>Statut
               <select [value]="filtresOperations().statutConsultation || ''" (change)="filtrerOperations('statutConsultation', $any($event.target).value)">
                 <option value="">Tous</option>
@@ -593,7 +610,6 @@
                 <th [class.right]="colonne.cle === 'montantSigne'" [attr.aria-sort]="triOperations().sortBy === colonne.cle ? (triOperations().sortDirection === 'ASC' ? 'ascending' : 'descending') : null">
                   <button type="button" class="sort-button" (click)="trierOperations(colonne.cle)">{{ colonne.libelle }} {{ indicateurTriOperations(colonne.cle) }}</button>
                 </th>
-                @if (colonne.cle === 'tiersReconnu') { <th scope="col">Rôle du tiers</th> }
               }
               <th>Voir</th>
             </tr></thead>
@@ -603,7 +619,7 @@
                   <td>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</td>
                   <td><span class="libelle-bancaire" [title]="operation.libelle">{{ operation.libelle }}</span></td>
                   <td>{{ operation.tiersReconnu || (operation.tiersId ? 'Tiers n° ' + operation.tiersId : 'Non identifié') }}</td>
-                  <td>{{ libellesRolesTiers(operation.rolesTiers) }}</td>
+                  <td>{{ operation.libellesRolesTiers || libellesRolesTiers(operation.rolesTiers) }}</td>
                   <td>{{ pieceAssociee(operation) }}</td>
                   <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
                   <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>

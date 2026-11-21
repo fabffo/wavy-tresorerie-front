@@ -55,6 +55,7 @@ export interface OperationBancaire {
   typeOperation: string;
   tiersReconnu?: string | null;
   rolesTiers?: string[];
+  libellesRolesTiers?: string;
   typeTiersReconnu?: TypeTiersReconnu | null;
   natureOperation: NatureOperationBancaire;
   statutClassification: StatutClassificationOperation;
@@ -128,7 +129,7 @@ export interface PageResponse<T> {
 export type SortDirection = 'ASC' | 'DESC';
 
 export type OperationBancaireSortBy =
-  | 'montantSigne' | 'numeroPieceAssociee' | 'statutConsultation' | 'natureOperation'
+  | 'rolesTiers' | 'montantSigne' | 'numeroPieceAssociee' | 'statutConsultation' | 'natureOperation'
   | 'dateOperation'
   | 'libelle'
   | 'compte'
@@ -174,6 +175,7 @@ export interface CompteursOperations {
   tiersIdentifies: number;
   nonRapprochees: number;
   sansTiers: number;
+  rolesTiersDisponibles?: { code: string; libelle: string }[];
 }
 
 export interface DetailOperation {
@@ -183,6 +185,7 @@ export interface DetailOperation {
 }
 
 export interface FiltresOperations {
+  rolesTiers?: string[];
   importId?: string;
   statutConsultation?: StatutConsultation;
   tiersReconnu?: string;

@@ -63,13 +63,19 @@ export class TresorerieApiService {
     return this.http.delete<void>(`${this.baseUrl}/comptes-bancaires/${id}`);
   }
 
-  operations(filtres?: FiltresOperations, parametres?: ParametresListeOperations) {
-    let params = new HttpParams();
-    Object.entries(filtres ?? {}).forEach(([cle, valeur]) => {
-      if (valeur) {
+  private parametresFiltres(filtres: FiltresOperations = {}, params = new HttpParams()): HttpParams {
+    for (const [cle, valeur] of Object.entries(filtres)) {
+      if (Array.isArray(valeur)) {
+        for (const element of valeur) params = params.append(cle, String(element));
+      } else if (valeur !== undefined && valeur !== '') {
         params = params.set(cle, String(valeur));
       }
-    });
+    }
+    return params;
+  }
+
+  operations(filtres?: FiltresOperations, parametres?: ParametresListeOperations) {
+    let params = this.parametresFiltres(filtres);
     if (parametres) {
       params = params
         .set('page', String(parametres.page))
@@ -81,9 +87,7 @@ export class TresorerieApiService {
   }
 
   compteursOperations(filtres: FiltresOperations) {
-    const params = new HttpParams({ fromObject: Object.fromEntries(
-      Object.entries(filtres).filter(([, valeur]) => !!valeur)
-    ) });
+    const params = this.parametresFiltres(filtres);
     return this.http.get<CompteursOperations>(`${this.baseUrl}/operations-bancaires/compteurs`, { params });
   }
 
@@ -138,11 +142,7 @@ export class TresorerieApiService {
   }
 
   previsualiserAssistant(etape: EtapeAssistant, categorie: string, perimetre: PerimetreAssistant) {
-    let params = new HttpParams().set('etape', etape).set('categorie', categorie);
-    for (const [cle, valeur] of Object.entries(perimetre)) {
-      if (Array.isArray(valeur)) { for (const id of valeur) params = params.append(cle, String(id)); }
-      else if (valeur !== undefined && valeur !== '') params = params.set(cle, String(valeur));
-    }
+    const params = this.parametresFiltres(perimetre, new HttpParams().set('etape', etape).set('categorie', categorie));
     return this.http.get<ApercuAssistant>(`${this.baseUrl}/operations-bancaires/assistant`, { params });
   }
 

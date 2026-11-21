@@ -43,6 +43,19 @@ describe('Contrat HTTP des propositions carte', () => {
     expect(p.request.method).toBe('POST');expect(p.request.body).toEqual(demande);p.flush({reussis:1,lignes:[]});
   });
 
+  it('sérialise les mêmes rôles pour la liste, les compteurs et l’assistant', () => {
+    const filtres = { importId: '12', tiersReconnu: 'Adobe', rolesTiers: ['MARCHAND', 'SALARIE'] };
+    api.operations(filtres, { page: 1, size: 10, sortBy: 'rolesTiers', sortDirection: 'ASC' }).subscribe();
+    api.compteursOperations(filtres).subscribe();
+    api.previsualiserAssistant('FOURNISSEURS', 'CARTE', filtres).subscribe();
+    for (const suffixe of ['/operations-bancaires', '/operations-bancaires/compteurs', '/operations-bancaires/assistant']) {
+      const req = http.expectOne(r => r.url.endsWith(suffixe));
+      expect(req.request.params.getAll('rolesTiers')).toEqual(filtres.rolesTiers);
+      expect(req.request.params.get('importId')).toBe('12');
+      req.flush({});
+    }
+  });
+
   it('charge le tiers créé avec son identité et ses rôles via le GET existant', () => {
     let tiers:unknown;api.obtenirTiersAssistant(21).subscribe(t=>tiers=t);
     const r=http.expectOne(req=>req.url.endsWith('/api/tiers/21'));expect(r.request.method).toBe('GET');
