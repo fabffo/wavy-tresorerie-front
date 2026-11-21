@@ -41,7 +41,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  }
  it('charge en lecture seule les opérations sans tiers et conserve les filtres combinés',()=>{
   page.etapeAssistant.set('FOURNISSEURS');page.filtresOperations.set({tiersReconnu:'ELIOS',typeTiersReconnu:'FOURNISSEUR',natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE'});
-  page.changerEtapeAssistant('TIERS');expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('TIERS','CARTE',expect.objectContaining({natureOperation:'SALAIRE',statutClassification:'CLASSEE_MANUELLE'}));
+  page.changerEtapeAssistant('TIERS');expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('TIERS','CARTE',expect.objectContaining({statutClassification:'CLASSEE_MANUELLE'}));
   expect(page.filtresOperations().tiersReconnu).toBe('ELIOS');
   expect(api['confirmerAssistant']).not.toHaveBeenCalled();expect(api['creerTiersIdentification']).not.toHaveBeenCalled();expect(api['enregistrerRegleIdentification']).not.toHaveBeenCalled();
  });
@@ -191,7 +191,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
 
  it('affiche un seul tableau et un formulaire dans sa ligne, sans fiche Tiers ni messages comptables',()=>{
   const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();page.previsualiserAssistant();ouvrir();fixture.detectChanges();
-  const html:HTMLElement=fixture.nativeElement;expect(html.querySelectorAll('table')).toHaveLength(1);expect(html.querySelectorAll('thead th')).toHaveLength(8);
+  const html:HTMLElement=fixture.nativeElement;expect(html.querySelectorAll('table')).toHaveLength(1);expect(html.querySelectorAll('thead th')).toHaveLength(7);
   const editeur=html.querySelector('[aria-label="Identification du tiers"]');expect(editeur).not.toBeNull();expect(editeur?.textContent).toContain('Valider');
   expect(editeur?.textContent).toContain('Motif bancaire (CONTIENT)');
   expect(editeur?.querySelector('input[type="checkbox"]')).toBeNull();expect(editeur?.textContent).not.toMatch(/disponible|échéance|justificatif|nature actuelle|fiche Tiers/i);expect(html.querySelector('[role="dialog"]')).toBeNull();
@@ -286,7 +286,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
  it('traite toutes les pages et conserve les filtres',async()=>{
   const lignes=Array.from({length:11},(_,i)=>({...ligne,operation:{...operation,id:91+i},candidats:[{...candidat,cle:'REGLE_BANCAIRE:9'}]}));
   api['previsualiserAssistant'].mockReturnValue(of(reponse(lignes)));page.filtresOperations.set({natureOperation:'SALAIRE'});page.previsualiserAssistant();page.taillePageOperations.set(10);page.pageResultatsAssistant.set(2);
-  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({perimetre:expect.objectContaining({natureOperation:'SALAIRE',consultation:true}),selections:expect.any(Array)}));
+  await page.identifierAutomatiquement();expect(api['confirmerAssistant']).toHaveBeenCalledWith(expect.objectContaining({perimetre:expect.not.objectContaining({natureOperation:'SALAIRE'}),selections:expect.any(Array)}));
   expect(api['confirmerAssistant'].mock.calls[0][0].selections).toHaveLength(11);
  });
  it('n’envoie jamais un lot sous une autre société ou après changement des filtres',async()=>{

@@ -162,7 +162,6 @@ export class TresoreriePage implements OnInit {
     { cle: 'libelle', libelle: 'Libellé' },
     { cle: 'tiersReconnu', libelle: 'Tiers' },
     { cle: 'numeroPieceAssociee', libelle: 'Pièce associée' },
-    { cle: 'natureOperation', libelle: 'Nature' },
     { cle: 'montantSigne', libelle: 'Montant' },
     { cle: 'statutConsultation', libelle: 'Statut' },
   ];
@@ -200,7 +199,8 @@ export class TresoreriePage implements OnInit {
   private filtresConsultation(): FiltresOperations {
     const choix = this.choixImport();
     const importId = choix === 'tous' ? undefined : choix === 'dernier' ? String(this.imports()[0]?.id ?? 0) : choix;
-    return { ...this.filtresOperations(), importId };
+    const { natureOperation, ...filtres } = this.filtresOperations();
+    return { ...filtres, importId };
   }
 
   changerImport(choix: string): void {

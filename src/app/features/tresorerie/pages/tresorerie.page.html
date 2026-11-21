@@ -286,12 +286,6 @@
             <label>Tiers
               <input type="search" placeholder="Tous" [value]="filtresOperations().tiersReconnu || ''" (input)="filtrerOperations('tiersReconnu', $any($event.target).value)" />
             </label>
-            <label>Nature
-              <select [value]="filtresOperations().natureOperation || ''" (change)="filtrerOperations('natureOperation', $any($event.target).value)">
-                <option value="">Toutes</option>
-                @for (nature of naturesOperation; track nature) { <option [value]="nature">{{ libelleNature(nature) }}</option> }
-              </select>
-            </label>
             <label>Statut
               <select [value]="filtresOperations().statutConsultation || ''" (change)="filtrerOperations('statutConsultation', $any($event.target).value)">
                 <option value="">Tous</option>
@@ -609,12 +603,11 @@
                   <td><span class="libelle-bancaire" [title]="operation.libelle">{{ operation.libelle }}</span></td>
                   <td>{{ operation.tiersReconnu || (operation.tiersId ? 'Tiers n° ' + operation.tiersId : 'Non identifié') }}</td>
                   <td>{{ pieceAssociee(operation) }}</td>
-                  <td>{{ libelleNature(operation.natureOperation) }}</td>
                   <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
                   <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>
                   <td><button type="button" [attr.aria-label]="'Voir ' + operation.libelle" (click)="voirOperation(operation)">Voir</button></td>
                 </tr>
-              } @empty { <tr><td colspan="8">Aucune opération pour cet import et ces filtres.</td></tr> }
+              } @empty { <tr><td colspan="7">Aucune opération pour cet import et ces filtres.</td></tr> }
             </tbody>
           </table>
         </div>
@@ -651,7 +644,7 @@
                       <section class="assistant-candidat">
                         <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + ligne.operation.id" [disabled]="loading() || ligne.bloquee || c.carte?.conflit"
                           [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,$any($event.target).checked)" />
-                          {{ c.numeroPiece || c.nomTiers }} @if (c.cle === 'CREATION') { · {{ montant(c.montantPropose) }} } — {{ c.typePiece }}</label>
+                          {{ c.numeroPiece || c.nomTiers }} @if (c.cle === 'CREATION') { · {{ montant(c.montantPropose) }} } — {{ c.cle.startsWith('P:REMBOURSEMENT:') ? 'Remboursement bénéficiaire' : c.typePiece }}</label>
                         <p>Tiers proposé : {{ c.nomTiers }} · Tiers {{ c.tiersId }}<br>
                           Montant disponible : {{ montant(c.montantDisponible) }}<br>Pièce : {{ c.datePiece || 'sans objet' }} · Échéance : {{ c.dateEcheance || 'absente' }}</p>
                         @for (critere of c.criteres; track critere) { <div>{{ critere }}</div> }

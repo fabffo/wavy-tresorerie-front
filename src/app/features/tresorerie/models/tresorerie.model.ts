@@ -268,7 +268,8 @@ export interface RapprochementFacturesResultat {
 
 export type TypePieceRapprochement = 'FACTURE_ACHAT' | 'FACTURE_VENTE' | 'PIECE_TRESORERIE' | 'SALAIRE'
   | 'NOTE_DE_FRAIS' | 'IMPOT_TAXE' | 'APPORT_CAPITAL' | 'COMPTE_COURANT_ASSOCIE' | 'EMPRUNT'
-  | 'VIREMENT_INTERNE' | 'REMBOURSEMENT' | 'AUTRE';
+  | 'VIREMENT_INTERNE' | 'REMBOURSEMENT' | 'AUTRE'
+  | 'REMBOURSEMENT_BENEFICIAIRE' | 'DEPENSE_CARTE_ENTREPRISE' | 'DEPENSE_ENTREPRISE';
 
 export interface PieceRapprochement {
   id: number; numero: string; type: TypePieceRapprochement; tiersId: number; tiers: string;

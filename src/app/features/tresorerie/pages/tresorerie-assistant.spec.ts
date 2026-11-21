@@ -117,11 +117,12 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     page.filtrerOperations('tiersReconnu','Adobe');
     page.pageSuivanteOperations();
     expect(api['operations']).toHaveBeenLastCalledWith(
-      {importId:'15',natureOperation:'FACTURE_FOURNISSEUR',statutConsultation:'PARTIELLE',tiersReconnu:'Adobe'},
+      {importId:'15',statutConsultation:'PARTIELLE',tiersReconnu:'Adobe'},
       expect.objectContaining({page:1}));
+    expect(api['compteursOperations'].mock.lastCall?.[0]).not.toHaveProperty('natureOperation');
     page.changerImport('tous');
     expect(api['operations']).toHaveBeenLastCalledWith(
-      {importId:undefined,natureOperation:'FACTURE_FOURNISSEUR',statutConsultation:'PARTIELLE',tiersReconnu:'Adobe'},
+      {importId:undefined,statutConsultation:'PARTIELLE',tiersReconnu:'Adobe'},
       expect.objectContaining({page:0}));
   });
 
@@ -131,6 +132,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(api['previsualiserAssistant']).toHaveBeenLastCalledWith('FOURNISSEURS','CARTE',expect.objectContaining({ operationIds: [1], tiersReconnu: 'Adobe' }));
     page.porteeAssistant.set('FILTRES');page.previsualiserAssistant();
     expect(api['previsualiserAssistant'].mock.calls[1][2].operationIds).toBeUndefined();
+    expect(api['previsualiserAssistant'].mock.calls[1][2]).not.toHaveProperty('natureOperation');
     expect(page.pageOperations()).toBe(4);expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
   it('une page vide ne devient jamais un traitement de toutes les opérations', () => {
@@ -303,7 +305,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
-      'Date opération','Libellé','Tiers','Pièce associée','Nature','Montant','Statut','Voir']);
+      'Date opération','Libellé','Tiers','Pièce associée','Montant','Statut','Voir']);
     const libelle = html.querySelector('tbody tr td:nth-child(2) span');
     expect(libelle?.textContent).toBe(operation.libelle);
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
