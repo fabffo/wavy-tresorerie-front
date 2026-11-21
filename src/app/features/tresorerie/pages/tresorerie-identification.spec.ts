@@ -191,7 +191,7 @@ describe('Identification du tiers sur la ligne bancaire',()=>{
 
  it('affiche un seul tableau et un formulaire dans sa ligne, sans fiche Tiers ni messages comptables',()=>{
   const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;page.onglet.set('operations');fixture.detectChanges();page.previsualiserAssistant();ouvrir();fixture.detectChanges();
-  const html:HTMLElement=fixture.nativeElement;expect(html.querySelectorAll('table')).toHaveLength(1);expect(html.querySelectorAll('thead th')).toHaveLength(7);
+  const html:HTMLElement=fixture.nativeElement;expect(html.querySelectorAll('table')).toHaveLength(1);expect(html.querySelectorAll('thead th')).toHaveLength(8);
   const editeur=html.querySelector('[aria-label="Identification du tiers"]');expect(editeur).not.toBeNull();expect(editeur?.textContent).toContain('Valider');
   expect(editeur?.textContent).toContain('Motif bancaire (CONTIENT)');
   expect(editeur?.querySelector('input[type="checkbox"]')).toBeNull();expect(editeur?.textContent).not.toMatch(/disponible|échéance|justificatif|nature actuelle|fiche Tiers/i);expect(html.querySelector('[role="dialog"]')).toBeNull();

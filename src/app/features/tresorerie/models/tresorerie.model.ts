@@ -54,6 +54,7 @@ export interface OperationBancaire {
   sens: 'CREDIT' | 'DEBIT';
   typeOperation: string;
   tiersReconnu?: string | null;
+  rolesTiers?: string[];
   typeTiersReconnu?: TypeTiersReconnu | null;
   natureOperation: NatureOperationBancaire;
   statutClassification: StatutClassificationOperation;

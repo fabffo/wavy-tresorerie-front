@@ -171,6 +171,18 @@ export class TresoreriePage implements OnInit {
   readonly aPropositionCertaine = computed(() => this.apercuAssistant()?.lignes.some(l =>
     !l.bloquee && l.candidats.length === 1 && l.candidats[0].sur && !l.candidats[0].carte?.conflit) ?? false);
 
+  libellesRolesTiers(roles: readonly string[] | undefined): string {
+    const libelles: Record<string, string> = {
+      SALARIE: 'Salarié',
+      PORTEUR_CARTE: 'Porteur de carte',
+      FOURNISSEUR_GENERAL: 'Fournisseur général',
+      FOURNISSEUR_SERVICES: 'Fournisseur de services',
+      GESTIONNAIRE_NOTE_FRAIS: 'Gestionnaire de notes de frais',
+    };
+    return roles?.map(role => libelles[role] ?? (role.charAt(0) + role.slice(1).toLowerCase()).replaceAll('_', ' '))
+      .join(', ') || '—';
+  }
+
   nomImportOperation(operation: OperationBancaire): string {
     if (!operation.importReleveBancaireId) return 'Saisie manuelle';
     const releve = this.imports().find(i => i.id === operation.importReleveBancaireId);

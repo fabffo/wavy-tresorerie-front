@@ -299,13 +299,16 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(page.pageOperations()).toBe(1);expect(api['operations']).toHaveBeenCalledTimes(2);expect(fin).toHaveBeenCalledTimes(1);expect(page.bilanAssistant()).toEqual(bilan);
   });
 
-  it('affiche le libellé bancaire en deuxième colonne et en entier dans le détail', () => {
+  it('affiche le libellé bancaire, les rôles du tiers et le détail', () => {
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
-    page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([operation]);fixture.detectChanges();
+    page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([{...operation, tiersId: 8, rolesTiers: ['SALARIE', 'PORTEUR_CARTE']},
+      {...operation, id: 2, tiersId: 9, typeTiersReconnu: 'SALARIE', rolesTiers: []}]);fixture.detectChanges();
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
-      'Date opération','Libellé','Tiers','Pièce associée','Montant','Statut','Voir']);
+      'Date opération','Libellé','Tiers','Rôle du tiers','Pièce associée','Montant','Statut','Voir']);
+    expect(Array.from(html.querySelectorAll('tbody tr td:nth-child(4)')).map(td => td.textContent?.trim()))
+      .toEqual(['Salarié, Porteur de carte', '—']);
     const libelle = html.querySelector('tbody tr td:nth-child(2) span');
     expect(libelle?.textContent).toBe(operation.libelle);
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
