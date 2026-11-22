@@ -1,3 +1,4 @@
+import { FermetureMenuRolesDirective } from './fermeture-menu-roles.directive';
 import { restaurerFiltresEcheances, memoriserFiltresEcheances } from '../../../shared/filters/echeances-filters';
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -69,7 +70,7 @@ class ErreurMotifBancaire extends Error {}
 
 @Component({
   selector: 'app-tresorerie-page',
-  imports: [DatePipe, ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule, FermetureMenuRolesDirective],
   templateUrl: './tresorerie.page.html',
   styleUrl: './tresorerie.page.css',
 })
