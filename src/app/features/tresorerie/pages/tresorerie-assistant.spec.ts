@@ -384,11 +384,11 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   it('affiche le libellé bancaire, les rôles du tiers et le détail', () => {
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
     page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([{...operation, tiersId: 8, rolesTiers: ['SALARIE', 'PORTEUR_CARTE']},
-      {...operation, id: 2, tiersId: 9, typeTiersReconnu: 'SALARIE', rolesTiers: []}]);fixture.detectChanges();
+      {...operation, id: 2, tiersId: 9, typeTiersReconnu: 'SALARIE', montantRapproche: 40, rolesTiers: []}]);fixture.detectChanges();
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
-      'Date opération','Libellé','Tiers','Rôle du tiers','Pièce associée','Montant','Statut','Voir']);
+      'Date opération','Libellé','Tiers','Rôle du tiers','Pièce associée','Montant','Statut','Options']);
     expect(Array.from(html.querySelectorAll('tbody tr td:nth-child(4)')).map(td => td.textContent?.trim()))
       .toEqual(['Salarié, Porteur de carte', '—']);
     const libelle = html.querySelector('tbody tr td:nth-child(2) span');
@@ -396,13 +396,41 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
-    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir']);
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher par défaut']);
+    const partielle = html.querySelector('tbody tr:nth-child(2) td:last-child')!;
+    expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement']);
     api['consulterOperation']=vi.fn(()=>of({operation,historique:[],solde:100}));
     cellule.querySelector('button')!.click();fixture.detectChanges();
     expect(html.querySelector('[role="dialog"]')?.textContent).toContain(operation.libelle);
     expect(api['consulterOperation']).toHaveBeenCalledWith(operation.id);
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
+  it('crée une pièce locale une seule fois et recharge la liste et les compteurs filtrés', () => {
+    vi.mocked(page.chargerOperations).mockRestore();
+    page.onglet.set('operations');
+    page.choixImport.set('12');
+    page.filtresOperations.set({ tiersReconnu: 'MACIF', rolesTiers: ['CLIENT'], statutConsultation: 'TIERS_IDENTIFIE' });
+    const reponse = new Subject<OperationBancaire>();
+    api['rapprocherParDefaut'] = vi.fn(() => reponse);
+    api['operations'] = vi.fn(() => of({ content: [], totalElements: 0, totalPages: 1 }));
+    api['compteursOperations'] = vi.fn(() => of({ total: 0, rapprochees: 0, partielles: 0, tiersIdentifies: 0, nonRapprochees: 0, sansTiers: 0 }));
+    page.ouvrirRapprochementParDefaut(operation);
+    page.libellePieceLocale.set('Facture octobre 2025');
+    page.validerRapprochementParDefaut();
+    expect(api['rapprocherParDefaut']).not.toHaveBeenCalled();
+    page.confirmationPieceLocale.set(true);
+    page.validerRapprochementParDefaut();
+    page.validerRapprochementParDefaut();
+    expect(api['rapprocherParDefaut']).toHaveBeenCalledExactlyOnceWith(1,
+      { libelle: 'Facture octobre 2025', tiersId: 21, montantDisponible: 100, confirmation: true });
+    reponse.next({ ...operation, statutRapprochement: 'RAPPROCHEE' });
+    reponse.complete();
+    const filtres = { importId: '12', tiersReconnu: 'MACIF', rolesTiers: ['CLIENT'], statutConsultation: 'TIERS_IDENTIFIE' };
+    expect(api['operations']).toHaveBeenCalledWith(filtres, expect.anything());
+    expect(api['compteursOperations']).toHaveBeenCalledWith(filtres);
+    expect(page.operationRapprochementDefaut()).toBeNull();
+  });
+
   it('examine les tiers inconnus sans réintroduire les opérations déjà identifiées', () => {
     const inconnue={...ligne,operation:{...operation,id:2,tiersId:null,tiersReconnu:null}} as LigneAssistant;
     analyser('TIERS',[ligne,inconnue]);expect(page.apercuAssistant()?.lignes.map(l=>l.operation.id)).toEqual([2]);

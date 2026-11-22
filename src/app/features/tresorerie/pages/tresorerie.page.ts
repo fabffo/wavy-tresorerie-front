@@ -989,6 +989,47 @@ export class TresoreriePage implements OnInit {
     this.chargerOperations(() => this.loading.set(false));
   }
 
+  readonly operationRapprochementDefaut = signal<OperationBancaire | null>(null);
+  readonly libellePieceLocale = signal('');
+  readonly confirmationPieceLocale = signal(false);
+  readonly erreurPieceLocale = signal<string | null>(null);
+
+  ouvrirRapprochementParDefaut(operation: OperationBancaire): void {
+    if (this.loading() || this.statutConsultation(operation) !== 'TIERS_IDENTIFIE') return;
+    this.operationRapprochementDefaut.set(operation);
+    this.libellePieceLocale.set('');
+    this.confirmationPieceLocale.set(false);
+    this.erreurPieceLocale.set(null);
+  }
+
+  disponibleBancaire(operation: OperationBancaire): number {
+    return Math.max(0, Math.round((Math.abs(this.montantSigne(operation)) - (operation.montantRapproche ?? 0)) * 100) / 100);
+  }
+
+  validerRapprochementParDefaut(): void {
+    const operation = this.operationRapprochementDefaut();
+    const libelle = this.libellePieceLocale().trim();
+    if (this.loading() || !operation?.tiersId || !this.confirmationPieceLocale() || !libelle || libelle.length > 500) return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.erreurPieceLocale.set(null);
+    this.api.rapprocherParDefaut(operation.id, {
+      tiersId: operation.tiersId, libelle, montantDisponible: this.disponibleBancaire(operation), confirmation: true,
+    }).subscribe({
+      next: () => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.operationRapprochementDefaut.set(null);
+        this.message.set('Pièce locale créée. Le rapprochement bancaire a été enregistré.');
+        this.chargerOperations(() => this.loading.set(false));
+      },
+      error: erreur => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.erreurPieceLocale.set(erreur?.error?.message || getHttpErrorMessage(erreur));
+        this.loading.set(false);
+      },
+    });
+  }
+
   ouvrirRapprochementManuel(operation: OperationBancaire): void {
     const contexte = this.cleContexteCartes();
     this.error.set(null);
@@ -1091,6 +1132,7 @@ export class TresoreriePage implements OnInit {
   }
 
   charger(): void {
+    this.operationRapprochementDefaut.set(null);
     this.operationRapprochementManuel.set(null);
     this.operationManuelleId.set(null);
     this.propositionsCartes.set(null);
@@ -1775,7 +1817,9 @@ export class TresoreriePage implements OnInit {
 
   annulerRapprochementValide(rapprochement: RapprochementBancaire): void {
     if (this.loading() || rapprochement.statut !== 'VALIDE'
-      || !confirm('Annuler ce rapprochement et le paiement associé ?')) return;
+      || !confirm(rapprochement.pieceRapprochementId
+        ? 'Annuler cette affectation à la pièce de Trésorerie ?'
+        : 'Annuler ce rapprochement et le paiement associé ?')) return;
 
     const contexte = this.cleContexteCartes();
     this.loading.set(true);

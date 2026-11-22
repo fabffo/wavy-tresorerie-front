@@ -621,7 +621,7 @@
                   <button type="button" class="sort-button" (click)="trierOperations(colonne.cle)">{{ colonne.libelle }} {{ indicateurTriOperations(colonne.cle) }}</button>
                 </th>
               }
-              <th>Voir</th>
+              <th>Options</th>
             </tr></thead>
             <tbody>
               @for (operation of operationsPage(); track operation.id) {
@@ -633,7 +633,22 @@
                   <td>{{ pieceAssociee(operation) }}</td>
                   <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
                   <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>
-                  <td><button type="button" [attr.aria-label]="'Voir ' + operation.libelle" (click)="voirOperation(operation)">Voir</button></td>
+                  <td>
+                    @if (rapprochementManuelPossible(operation)) {
+                      <details #options class="row-options">
+                        <summary class="btn btn-outline-secondary btn-sm" [attr.aria-label]="'Options ' + operation.libelle">Options</summary>
+                        <div class="row-options-menu">
+                          <button type="button" (click)="options.open = false; voirOperation(operation)">Voir</button>
+                          <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+                          @if (statutConsultation(operation) === 'TIERS_IDENTIFIE') {
+                            <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementParDefaut(operation)">Rapprocher par défaut</button>
+                          }
+                        </div>
+                      </details>
+                    } @else {
+                      <button type="button" [attr.aria-label]="'Voir ' + operation.libelle" (click)="voirOperation(operation)">Voir</button>
+                    }
+                  </td>
                 </tr>
               } @empty { <tr><td colspan="8">Aucune opération pour cet import et ces filtres.</td></tr> }
             </tbody>
@@ -733,6 +748,35 @@
                 <button type="button" [disabled]="loading()" (click)="recapAssistant.set(null)">Annuler</button>
               </section></div>
             }
+        @if (operationRapprochementDefaut(); as operation) {
+          <form class="operation-form" (submit)="$event.preventDefault(); validerRapprochementParDefaut()">
+            <h3>Rapprocher par défaut</h3>
+            <dl>
+              <dt>Opération bancaire</dt><dd>{{ operation.libelle }}</dd>
+              <dt>Tiers</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
+              <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
+              <dt>Montant disponible</dt><dd>{{ montant(disponibleBancaire(operation)) }}</dd>
+              <dt>Type</dt><dd>Pièce de rapprochement interne</dd>
+            </dl>
+            <label>Libellé de la pièce
+              <input required maxlength="500" placeholder="Facture octobre 2025" [value]="libellePieceLocale()"
+                [disabled]="loading()" (input)="libellePieceLocale.set($any($event.target).value)" />
+            </label>
+            <label class="check">
+              <input type="checkbox" [checked]="confirmationPieceLocale()" [disabled]="loading()"
+                (change)="confirmationPieceLocale.set($any($event.target).checked)" />
+              Je confirme la création de la pièce et son rapprochement.
+            </label>
+            @if (erreurPieceLocale(); as erreur) { <p role="alert">{{ erreur }}</p> }
+            <div class="form-actions">
+              <button type="submit" class="primary" [disabled]="loading() || !libellePieceLocale().trim() || !confirmationPieceLocale()">Valider</button>
+              <button type="button" [disabled]="loading()" (click)="operationRapprochementDefaut.set(null)">Annuler</button>
+              @if (erreurPieceLocale()) {
+                <button type="button" [disabled]="loading()" (click)="operationRapprochementDefaut.set(null); ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+              }
+            </div>
+          </form>
+        }
         @if (operationConsultee(); as operationListe) {
           @let operation = detailOperation()?.operation ?? operationListe;
           <div class="modal-backdrop" (keydown.escape)="operationConsultee.set(null)"><section role="dialog" aria-modal="true" aria-label="Détail de l’opération" class="manual-match-modal">
@@ -752,7 +796,11 @@
               <h4>Historique des rapprochements</h4>
               <ul>
                 @for (trace of detail.historique; track trace.id) {
-                  <li>{{ trace.dateRapprochement }} · {{ trace.documentAssocieNumero || trace.libelleRapprochement || referencePieceHistorique(trace) }} · {{ montant(trace.montantRapproche) }} · {{ trace.statut }}</li>
+                  <li>{{ trace.dateRapprochement }} · {{ trace.documentAssocieNumero || trace.libelleRapprochement || referencePieceHistorique(trace) }} · {{ montant(trace.montantRapproche) }} · {{ trace.statut }}
+                    @if (detail.annulationsLocales?.includes(trace.id)) {
+                      <button type="button" [disabled]="loading()" (click)="annulerRapprochementValide(trace)">Annuler le rapprochement</button>
+                    }
+                  </li>
                 } @empty { <li>Aucun rapprochement enregistré.</li> }
               </ul>
             }

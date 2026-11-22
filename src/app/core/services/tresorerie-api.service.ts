@@ -199,6 +199,12 @@ export class TresorerieApiService {
     return this.http.post<OperationBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/piece-rapprochement`, {});
   }
 
+  rapprocherParDefaut(operationId: number, demande: {
+    tiersId: number; montantDisponible: number; libelle: string; confirmation: boolean;
+  }) {
+    return this.http.post<OperationBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/rapprochement-par-defaut`, demande);
+  }
+
   rapprocherFacture(operationId: number) {
     return this.http.post<RapprochementFacturesResultat>(`${this.baseUrl}/operations-bancaires/${operationId}/rapprochement-factures`, {});
   }

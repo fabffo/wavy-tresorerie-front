@@ -181,6 +181,7 @@ export interface CompteursOperations {
 export interface DetailOperation {
   operation: OperationBancaire;
   historique: RapprochementBancaire[];
+  annulationsLocales?: number[];
   solde: number;
 }
 
