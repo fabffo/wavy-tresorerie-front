@@ -414,7 +414,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     api['rapprocherParDefaut'] = vi.fn(() => reponse);
     api['operations'] = vi.fn(() => of({ content: [], totalElements: 0, totalPages: 1 }));
     api['compteursOperations'] = vi.fn(() => of({ total: 0, rapprochees: 0, partielles: 0, tiersIdentifies: 0, nonRapprochees: 0, sansTiers: 0 }));
-    page.ouvrirRapprochementParDefaut(operation);
+    page.ouvrirRapprochementParDefaut({ ...operation, pieceRapprochementAutorisee: false });
     page.libellePieceLocale.set('Facture octobre 2025');
     page.validerRapprochementParDefaut();
     expect(api['rapprocherParDefaut']).not.toHaveBeenCalled();
