@@ -288,8 +288,7 @@
             </label>
             <div class="filtre-roles">
               <span id="libelle-filtre-roles">Rôles du tiers</span>
-              <details #menuRoles wavyFermetureMenuRoles class="position-relative" (keydown.escape)="menuRoles.open = false; declencheurRoles.focus()"
-                (focusout)="menuRoles.open = menuRoles.open && menuRoles.contains($any($event).relatedTarget)">
+              <details #menuRoles wavyFermetureMenuRoles class="position-relative" (keydown.escape)="menuRoles.open = false; declencheurRoles.focus()">
                 <summary #declencheurRoles class="form-select pe-5 text-truncate" aria-labelledby="libelle-filtre-roles valeur-filtre-roles">
                   <span id="valeur-filtre-roles">{{ resumeFiltreRolesTiers() }}</span>
                 </summary>
