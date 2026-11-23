@@ -990,6 +990,55 @@ export class TresoreriePage implements OnInit {
     this.chargerOperations(() => this.loading.set(false));
   }
 
+  readonly operationExerciceAnterieur = signal<OperationBancaire | null>(null);
+  readonly exerciceReference = signal<number | null>(null);
+  readonly motifExercice = signal('');
+  readonly confirmationExercice = signal(false);
+  readonly erreurExercice = signal<string | null>(null);
+  readonly exerciceValide = computed(() => {
+    const annee = this.exerciceReference();
+    const operation = this.operationExerciceAnterieur();
+    return operation !== null && annee !== null && Number.isInteger(annee) && annee >= 1
+      && annee < Number(operation.dateOperation.slice(0, 4));
+  });
+
+  ouvrirExerciceAnterieur(operation: OperationBancaire): void {
+    if (this.loading() || !this.rapprochementManuelPossible(operation)
+        || this.statutConsultation(operation) !== 'TIERS_IDENTIFIE') return;
+    this.operationExerciceAnterieur.set(operation);
+    this.exerciceReference.set(null);
+    this.motifExercice.set('');
+    this.confirmationExercice.set(false);
+    this.erreurExercice.set(null);
+  }
+
+  validerExerciceAnterieur(): void {
+    const operation = this.operationExerciceAnterieur();
+    const exerciceReference = this.exerciceReference();
+    const motif = this.motifExercice().trim();
+    if (this.loading() || !operation?.tiersId || exerciceReference === null || !this.exerciceValide()
+        || !motif || motif.length > 500 || !this.confirmationExercice()) return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.erreurExercice.set(null);
+    this.api.rapprocherExerciceAnterieur(operation.id, {
+      tiersId: operation.tiersId, montantDisponible: this.disponibleBancaire(operation),
+      exerciceReference, motif, confirmation: true,
+    }).subscribe({
+      next: () => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.operationExerciceAnterieur.set(null);
+        this.message.set('Suivi bancaire sur exercice antérieur enregistré.');
+        this.chargerOperations(() => this.loading.set(false));
+      },
+      error: erreur => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.erreurExercice.set(erreur?.error?.message || getHttpErrorMessage(erreur));
+        this.loading.set(false);
+      },
+    });
+  }
+
   readonly operationRapprochementDefaut = signal<OperationBancaire | null>(null);
   readonly libellePieceLocale = signal('');
   readonly confirmationPieceLocale = signal(false);
@@ -1133,6 +1182,7 @@ export class TresoreriePage implements OnInit {
   }
 
   charger(): void {
+    this.operationExerciceAnterieur.set(null);
     this.operationRapprochementDefaut.set(null);
     this.operationRapprochementManuel.set(null);
     this.operationManuelleId.set(null);
@@ -1817,10 +1867,13 @@ export class TresoreriePage implements OnInit {
   }
 
   annulerRapprochementValide(rapprochement: RapprochementBancaire): void {
-    if (this.loading() || rapprochement.statut !== 'VALIDE'
-      || !confirm(rapprochement.pieceRapprochementId
+    if (this.loading() || rapprochement.statut !== 'VALIDE') return;
+    const confirmation = rapprochement.modeRapprochement === 'EXERCICE_ANTERIEUR'
+      ? 'Annuler le suivi bancaire sur exercice antérieur ?'
+      : rapprochement.pieceRapprochementId
         ? 'Annuler cette affectation à la pièce de Trésorerie ?'
-        : 'Annuler ce rapprochement et le paiement associé ?')) return;
+        : 'Annuler ce rapprochement et le paiement associé ?';
+    if (!confirm(confirmation)) return;
 
     const contexte = this.cleContexteCartes();
     this.loading.set(true);
@@ -1832,6 +1885,10 @@ export class TresoreriePage implements OnInit {
         this.rapprochements.update(items => items.map(item => item.id === resultat.id ? resultat : item));
         this.chargerRapprochements();
         this.chargerOperations(() => this.loading.set(false));
+        const operationConsultee = this.operationConsultee();
+        if (resultat.modeRapprochement === 'EXERCICE_ANTERIEUR' && operationConsultee?.id === resultat.operationBancaireId) {
+          this.voirOperation(operationConsultee);
+        }
         this.message.set('Rapprochement annulé. Les soldes ont été actualisés.');
         this.api.dashboard().subscribe({ next: dashboard => {
           if (contexte === this.cleContexteCartes()) this.dashboard.set(dashboard);

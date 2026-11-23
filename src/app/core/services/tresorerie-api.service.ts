@@ -199,6 +199,12 @@ export class TresorerieApiService {
     return this.http.post<OperationBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/piece-rapprochement`, {});
   }
 
+  rapprocherExerciceAnterieur(operationId: number, demande: {
+    tiersId: number; montantDisponible: number; exerciceReference: number; motif: string; confirmation: boolean;
+  }) {
+    return this.http.post<RapprochementBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/rapprochement-exercice-anterieur`, demande);
+  }
+
   rapprocherParDefaut(operationId: number, demande: {
     tiersId: number; montantDisponible: number; libelle: string; confirmation: boolean;
   }) {

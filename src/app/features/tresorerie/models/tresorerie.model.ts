@@ -250,6 +250,7 @@ export interface RapprochementBancaire {
   ecart: number;
   statut: 'PROPOSE' | 'VALIDE' | 'ANNULE';
   commentaire?: string | null;
+  exerciceReference?: number | null;
   dateRapprochement: string;
   utilisateurId?: number | null;
   modeRapprochement?: string | null;

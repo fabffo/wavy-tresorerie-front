@@ -396,7 +396,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
-    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher par défaut']);
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher par défaut', 'Rapprocher sur exercice antérieur']);
     const partielle = html.querySelector('tbody tr:nth-child(2) td:last-child')!;
     expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement']);
     api['consulterOperation']=vi.fn(()=>of({operation,historique:[],solde:100}));
@@ -429,6 +429,63 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(api['operations']).toHaveBeenCalledWith(filtres, expect.anything());
     expect(api['compteursOperations']).toHaveBeenCalledWith(filtres);
     expect(page.operationRapprochementDefaut()).toBeNull();
+  });
+
+  it('confirme le suivi sur un exercice antérieur et recharge le périmètre filtré', () => {
+    vi.mocked(page.chargerOperations).mockRestore();
+    page.onglet.set('operations');
+    page.choixImport.set('12');
+    page.filtresOperations.set({ tiersReconnu: 'MACIF', rolesTiers: ['CLIENT'], statutConsultation: 'TIERS_IDENTIFIE' });
+    const reponse = new Subject<RapprochementBancaire>();
+    api['rapprocherExerciceAnterieur'] = vi.fn(() => reponse);
+    api['operations'] = vi.fn(() => of({ content: [], totalElements: 0, totalPages: 1 }));
+    api['compteursOperations'] = vi.fn(() => of({ total: 0, rapprochees: 0, partielles: 0, tiersIdentifies: 0, nonRapprochees: 0, sansTiers: 0 }));
+    page.ouvrirExerciceAnterieur({
+      ...operation, tiersReconnu: 'MACIF', dateOperation: '2026-01-26', sens: 'CREDIT', debit: 0, credit: 6480, montant: 6480,
+    });
+    page.exerciceReference.set(2026);
+    page.motifExercice.set('Facture octobre 2025');
+    page.confirmationExercice.set(true);
+    page.validerExerciceAnterieur();
+    page.exerciceReference.set(2025);
+    page.confirmationExercice.set(false);
+    page.validerExerciceAnterieur();
+    page.confirmationExercice.set(true);
+    page.motifExercice.set(' ');
+    page.validerExerciceAnterieur();
+    expect(api['rapprocherExerciceAnterieur']).not.toHaveBeenCalled();
+    page.motifExercice.set('Facture octobre 2025');
+    page.validerExerciceAnterieur();
+    page.validerExerciceAnterieur();
+    expect(api['rapprocherExerciceAnterieur']).toHaveBeenCalledExactlyOnceWith(1,
+      { tiersId: 21, montantDisponible: 6480, exerciceReference: 2025, motif: 'Facture octobre 2025', confirmation: true });
+    reponse.next({ id: 42, modeRapprochement: 'EXERCICE_ANTERIEUR', exerciceReference: 2025 } as RapprochementBancaire);
+    reponse.complete();
+    const filtres = { importId: '12', tiersReconnu: 'MACIF', rolesTiers: ['CLIENT'], statutConsultation: 'TIERS_IDENTIFIE' };
+    expect(api['operations']).toHaveBeenCalledWith(filtres, expect.anything());
+    expect(api['compteursOperations']).toHaveBeenCalledWith(filtres);
+    expect(page.operationExerciceAnterieur()).toBeNull();
+  });
+
+  it('affiche le suivi bancaire et son annulation dans l’historique de l’opération', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    fixture.detectChanges();
+    const trace = {
+      id: 42, operationBancaireId: 1, modeRapprochement: 'EXERCICE_ANTERIEUR', exerciceReference: 2025,
+      commentaire: 'Facture octobre 2025', montantRapproche: 6480, statut: 'VALIDE',
+      dateValidation: '2026-11-23T08:00:00', utilisateurValidationId: 7,
+    };
+    api['consulterOperation'] = vi.fn(() => of({ operation, historique: [trace], solde: 0, annulationsLocales: [42] }));
+    page.voirOperation(operation);
+    fixture.detectChanges();
+    const dialogue: HTMLElement = fixture.nativeElement.querySelector('[role="dialog"]');
+    expect(dialogue.textContent).toContain('Suivi bancaire — exercice 2025');
+    expect(dialogue.textContent).toContain('Facture octobre 2025');
+    expect(dialogue.textContent).toContain('Utilisateur n° 7');
+    expect(Array.from(dialogue.querySelectorAll('button')).map(b => b.textContent?.trim()))
+      .toContain('Annuler le rapprochement');
   });
 
   it('examine les tiers inconnus sans réintroduire les opérations déjà identifiées', () => {
