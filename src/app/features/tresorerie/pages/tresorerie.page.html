@@ -639,7 +639,6 @@
                           <button type="button" (click)="options.open = false; voirOperation(operation)">Voir</button>
                           <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
                           @if (statutConsultation(operation) === 'TIERS_IDENTIFIE') {
-                            <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementParDefaut(operation)">Rapprocher par défaut</button>
                             <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirExerciceAnterieur(operation)">Rapprocher sur exercice antérieur</button>
                           }
                         </div>
@@ -748,35 +747,38 @@
               </section></div>
             }
         @if (operationExerciceAnterieur(); as operation) {
-          <form class="operation-form" (submit)="$event.preventDefault(); validerExerciceAnterieur()">
-            <h3>Rapprocher sur exercice antérieur</h3>
-            <p>Cette action clôt le suivi bancaire sur votre déclaration. Elle ne constitue ni un lettrage ni une attestation de comptabilisation.</p>
-            <dl>
-              <dt>Opération bancaire</dt><dd>{{ operation.libelle }}</dd>
-              <dt>Tiers</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
-              <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
-              <dt>Montant disponible</dt><dd>{{ montant(disponibleBancaire(operation)) }}</dd>
-            </dl>
-            <label>Exercice de référence
-              <input type="number" required min="1" step="1" [max]="+operation.dateOperation.slice(0, 4) - 1"
-                [value]="exerciceReference() ?? ''" [disabled]="loading()"
-                (input)="exerciceReference.set($any($event.target).valueAsNumber)" />
-            </label>
-            <label>Motif
-              <input required maxlength="500" placeholder="Facture octobre 2025" [value]="motifExercice()"
-                [disabled]="loading()" (input)="motifExercice.set($any($event.target).value)" />
-            </label>
-            <label class="check">
-              <input type="checkbox" [checked]="confirmationExercice()" [disabled]="loading()"
-                (change)="confirmationExercice.set($any($event.target).checked)" />
-              Je confirme le suivi bancaire sur cet exercice.
-            </label>
-            @if (erreurExercice(); as erreur) { <p role="alert">{{ erreur }}</p> }
-            <div class="form-actions">
-              <button type="submit" class="primary" [disabled]="loading() || !exerciceValide() || !motifExercice().trim() || !confirmationExercice()">Valider</button>
-              <button type="button" [disabled]="loading()" (click)="operationExerciceAnterieur.set(null)">Annuler</button>
-            </div>
-          </form>
+          <div class="modal-backdrop" (keydown.escape)="!loading() && operationExerciceAnterieur.set(null)">
+            <form class="manual-match-modal operation-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="exercice-anterieur-titre"
+              (submit)="$event.preventDefault(); validerExerciceAnterieur()">
+              <h2 id="exercice-anterieur-titre">Rapprocher sur exercice antérieur</h2>
+              <p>Cette action clôt le suivi bancaire sur votre déclaration. Elle ne constitue ni un lettrage ni une attestation de comptabilisation.</p>
+              <dl>
+                <dt>Opération bancaire</dt><dd>{{ operation.libelle }}</dd>
+                <dt>Tiers</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
+                <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
+                <dt>Montant disponible</dt><dd>{{ montant(disponibleBancaire(operation)) }}</dd>
+              </dl>
+              <label>Exercice de référence
+                <input type="number" required min="1" step="1" [max]="+operation.dateOperation.slice(0, 4) - 1"
+                  [value]="exerciceReference() ?? ''" [disabled]="loading()"
+                  (input)="exerciceReference.set($any($event.target).valueAsNumber)" />
+              </label>
+              <label>Motif
+                <input required maxlength="500" placeholder="Facture octobre 2025" [value]="motifExercice()"
+                  [disabled]="loading()" (input)="motifExercice.set($any($event.target).value)" />
+              </label>
+              <label class="check">
+                <input type="checkbox" [checked]="confirmationExercice()" [disabled]="loading()"
+                  (change)="confirmationExercice.set($any($event.target).checked)" />
+                Je confirme le suivi bancaire sur cet exercice.
+              </label>
+              @if (erreurExercice(); as erreur) { <p class="warning" role="alert">{{ erreur }}</p> }
+              <div class="form-actions">
+                <button type="submit" class="primary" [disabled]="loading() || !exerciceValide() || !motifExercice().trim() || !confirmationExercice()">Valider</button>
+                <button type="button" [disabled]="loading()" (click)="operationExerciceAnterieur.set(null)">Annuler</button>
+              </div>
+            </form>
+          </div>
         }
         @if (operationRapprochementDefaut(); as operation) {
           <form class="operation-form" (submit)="$event.preventDefault(); validerRapprochementParDefaut()">

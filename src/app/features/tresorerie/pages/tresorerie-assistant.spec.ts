@@ -396,7 +396,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
-    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher par défaut', 'Rapprocher sur exercice antérieur']);
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher sur exercice antérieur']);
     const partielle = html.querySelector('tbody tr:nth-child(2) td:last-child')!;
     expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement']);
     api['consulterOperation']=vi.fn(()=>of({operation,historique:[],solde:100}));
@@ -465,6 +465,43 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(api['operations']).toHaveBeenCalledWith(filtres, expect.anything());
     expect(api['compteursOperations']).toHaveBeenCalledWith(filtres);
     expect(page.operationExerciceAnterieur()).toBeNull();
+  });
+
+  it('ouvre le formulaire dans une fenêtre modale et conserve la saisie après une erreur API', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    page.operations.set([{ ...operation, tiersReconnu: 'MACIF', dateOperation: '2026-01-26' }]);
+    fixture.detectChanges();
+
+    const html: HTMLElement = fixture.nativeElement;
+    const action = [...html.querySelectorAll<HTMLButtonElement>('tbody button')]
+      .find(button => button.textContent?.trim() === 'Rapprocher sur exercice antérieur')!;
+    action.click();
+    fixture.detectChanges();
+
+    const dialogue = html.querySelector<HTMLFormElement>('.modal-backdrop form[role="dialog"][aria-modal="true"]')!;
+    expect(dialogue.querySelector('h2')?.textContent).toBe('Rapprocher sur exercice antérieur');
+    expect(dialogue.textContent).toContain('MACIF');
+    expect(dialogue.textContent).toContain('26/01/2026');
+    page.exerciceReference.set(2025);
+    page.motifExercice.set('Facture octobre 2025');
+    page.confirmationExercice.set(true);
+    api['rapprocherExerciceAnterieur'] = vi.fn(() => throwError(() => ({
+      error: { message: 'Cette opération a déjà été rapprochée.' },
+    })));
+    fixture.detectChanges();
+
+    dialogue.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect(api['rapprocherExerciceAnterieur']).toHaveBeenCalledExactlyOnceWith(operation.id,
+      { tiersId: operation.tiersId, montantDisponible: 100, exerciceReference: 2025, motif: 'Facture octobre 2025', confirmation: true });
+    expect(dialogue.querySelector('[role="alert"]')?.textContent).toContain('Cette opération a déjà été rapprochée.');
+    expect(dialogue.querySelector<HTMLInputElement>('input[placeholder]')?.value).toBe('Facture octobre 2025');
+
+    dialogue.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
+    fixture.detectChanges();
+    expect(html.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('affiche le suivi bancaire et son annulation dans l’historique de l’opération', () => {
