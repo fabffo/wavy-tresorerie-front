@@ -382,9 +382,10 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
   });
 
   it('affiche le libellé bancaire, les rôles du tiers et le détail', () => {
+    const dateOperation = `${new Date().getFullYear()}-01-12`;
     const fixture=TestBed.createComponent(TresoreriePage);page=fixture.componentInstance;
-    page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([{...operation, tiersId: 8, rolesTiers: ['SALARIE', 'PORTEUR_CARTE']},
-      {...operation, id: 2, tiersId: 9, typeTiersReconnu: 'SALARIE', montantRapproche: 40, rolesTiers: []}]);fixture.detectChanges();
+    page.onglet.set('operations');page.etapeAssistant.set('FOURNISSEURS');page.operations.set([{...operation, dateOperation, tiersId: 8, rolesTiers: ['SALARIE', 'PORTEUR_CARTE']},
+      {...operation, dateOperation, id: 2, tiersId: 9, typeTiersReconnu: 'SALARIE', montantRapproche: 40, rolesTiers: []}]);fixture.detectChanges();
     const html:HTMLElement=fixture.nativeElement;
     expect(html.querySelectorAll('table')).toHaveLength(1);
     expect(Array.from(html.querySelectorAll('thead th')).map(th=>th.textContent?.trim().replace(/[↑↓↕▼▲]/g,'').trim())).toEqual([
@@ -396,9 +397,9 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
-    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher sur exercice antérieur']);
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher avec création d’une pièce', 'Rapprocher sur exercice antérieur']);
     const partielle = html.querySelector('tbody tr:nth-child(2) td:last-child')!;
-    expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement']);
+    expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher avec création d’une pièce']);
     api['consulterOperation']=vi.fn(()=>of({operation,historique:[],solde:100}));
     cellule.querySelector('button')!.click();fixture.detectChanges();
     expect(html.querySelector('[role="dialog"]')?.textContent).toContain(operation.libelle);
@@ -414,21 +415,50 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     api['rapprocherParDefaut'] = vi.fn(() => reponse);
     api['operations'] = vi.fn(() => of({ content: [], totalElements: 0, totalPages: 1 }));
     api['compteursOperations'] = vi.fn(() => of({ total: 0, rapprochees: 0, partielles: 0, tiersIdentifies: 0, nonRapprochees: 0, sansTiers: 0 }));
-    page.ouvrirRapprochementParDefaut({ ...operation, pieceRapprochementAutorisee: false });
+    api['consulterOperation'] = vi.fn(() => of({ operation, historique: [], solde: 100 }));
+    page.ouvrirCreationPiece({ ...operation, dateOperation: `${new Date().getFullYear()}-01-12`, pieceRapprochementAutorisee: false });
+    expect(page.motifPieceLocale()).toBe('Justificatif manquant');
     page.libellePieceLocale.set('Facture octobre 2025');
-    page.validerRapprochementParDefaut();
+    page.validerCreationPiece();
     expect(api['rapprocherParDefaut']).not.toHaveBeenCalled();
     page.confirmationPieceLocale.set(true);
-    page.validerRapprochementParDefaut();
-    page.validerRapprochementParDefaut();
+    page.validerCreationPiece();
+    page.validerCreationPiece();
     expect(api['rapprocherParDefaut']).toHaveBeenCalledExactlyOnceWith(1,
-      { libelle: 'Facture octobre 2025', tiersId: 21, montantDisponible: 100, confirmation: true });
+      { libelle: 'Facture octobre 2025', tiersId: 21, montantDisponible: 100, confirmation: true,
+        motifAbsenceJustificatif: 'Justificatif manquant' });
     reponse.next({ ...operation, statutRapprochement: 'RAPPROCHEE' });
     reponse.complete();
     const filtres = { importId: '12', tiersReconnu: 'MACIF', rolesTiers: ['CLIENT'], statutConsultation: 'TIERS_IDENTIFIE' };
     expect(api['operations']).toHaveBeenCalledWith(filtres, expect.anything());
     expect(api['compteursOperations']).toHaveBeenCalledWith(filtres);
-    expect(page.operationRapprochementDefaut()).toBeNull();
+    expect(page.operationCreationPiece()).toBeNull();
+  });
+
+  it('affiche la modale sans justificatif et avertit quand une pièce est connue', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    const uber = { ...operation, tiersReconnu: 'UBER', dateOperation: `${new Date().getFullYear()}-01-30`,
+      debit: 23.11, montant: 23.11, rolesTiers: ['MARCHAND'] };
+    page.operations.set([uber]);
+    api['consulterOperation'] = vi.fn(() => of({
+      operation: uber, historique: [{ statut: 'PROPOSE', factureId: 4 }], solde: 23.11,
+    }));
+    fixture.detectChanges();
+    const html: HTMLElement = fixture.nativeElement;
+    [...html.querySelectorAll<HTMLButtonElement>('tbody button')]
+      .find(b => b.textContent?.trim() === 'Rapprocher avec création d’une pièce')!.click();
+    fixture.detectChanges();
+
+    const modal = html.querySelector('.modal-backdrop [role="dialog"]')!;
+    expect(modal.textContent).toContain('UBER');
+    expect(modal.textContent).toContain(`01/${new Date().getFullYear()}`);
+    expect(modal.textContent).toContain('23,11');
+    expect(modal.textContent).toContain('TVA déductible');
+    expect(modal.textContent).toContain('Une pièce est déjà connue');
+    expect(modal.querySelectorAll('input')[1].value).toBe('Justificatif manquant');
+    expect(modal.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
   });
 
   it('confirme le suivi sur un exercice antérieur et recharge le périmètre filtré', () => {

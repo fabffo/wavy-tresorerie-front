@@ -1039,36 +1039,59 @@ export class TresoreriePage implements OnInit {
     });
   }
 
-  readonly operationRapprochementDefaut = signal<OperationBancaire | null>(null);
+  readonly operationCreationPiece = signal<OperationBancaire | null>(null);
   readonly libellePieceLocale = signal('');
+  readonly motifPieceLocale = signal('Justificatif manquant');
+  readonly avertissementPieceLocale = signal(false);
   readonly confirmationPieceLocale = signal(false);
   readonly erreurPieceLocale = signal<string | null>(null);
 
-  ouvrirRapprochementParDefaut(operation: OperationBancaire): void {
-    if (this.loading() || this.statutConsultation(operation) !== 'TIERS_IDENTIFIE') return;
-    this.operationRapprochementDefaut.set(operation);
+  creationPiecePossible(operation: OperationBancaire): boolean {
+    return this.rapprochementManuelPossible(operation) && !operation.pieceRapprochementId
+      && Number(operation.dateOperation.slice(0, 4)) === new Date().getFullYear();
+  }
+
+  ouvrirCreationPiece(operation: OperationBancaire): void {
+    if (this.loading() || !this.creationPiecePossible(operation)) return;
+    this.operationCreationPiece.set(operation);
     this.libellePieceLocale.set('');
+    this.motifPieceLocale.set('Justificatif manquant');
     this.confirmationPieceLocale.set(false);
     this.erreurPieceLocale.set(null);
+    this.avertissementPieceLocale.set(!!(operation.factureId || operation.factureRapprochementId
+      || operation.salaireId || operation.numeroPieceAssociee));
+    this.api.consulterOperation(operation.id).subscribe({
+      next: detail => {
+        if (this.operationCreationPiece() !== operation) return;
+        if (detail.historique.some(trace => trace.statut !== 'ANNULE'
+            && (trace.factureId || trace.salaireId || trace.pieceRapprochementId))) {
+          this.avertissementPieceLocale.set(true);
+        }
+      },
+      error: () => {}, // L’avertissement s’appuie aussi sur les pièces déjà visibles dans la liste.
+    });
   }
 
   disponibleBancaire(operation: OperationBancaire): number {
     return Math.max(0, Math.round((Math.abs(this.montantSigne(operation)) - (operation.montantRapproche ?? 0)) * 100) / 100);
   }
 
-  validerRapprochementParDefaut(): void {
-    const operation = this.operationRapprochementDefaut();
+  validerCreationPiece(): void {
+    const operation = this.operationCreationPiece();
     const libelle = this.libellePieceLocale().trim();
-    if (this.loading() || !operation?.tiersId || !this.confirmationPieceLocale() || !libelle || libelle.length > 500) return;
+    const motifAbsenceJustificatif = this.motifPieceLocale().trim();
+    if (this.loading() || !operation?.tiersId || !this.confirmationPieceLocale() || !libelle || libelle.length > 500
+        || !motifAbsenceJustificatif || motifAbsenceJustificatif.length > 500) return;
     const contexte = this.cleContexteCartes();
     this.loading.set(true);
     this.erreurPieceLocale.set(null);
     this.api.rapprocherParDefaut(operation.id, {
-      tiersId: operation.tiersId, libelle, montantDisponible: this.disponibleBancaire(operation), confirmation: true,
+      tiersId: operation.tiersId, libelle, motifAbsenceJustificatif,
+      montantDisponible: this.disponibleBancaire(operation), confirmation: true,
     }).subscribe({
       next: () => {
         if (contexte !== this.cleContexteCartes()) return;
-        this.operationRapprochementDefaut.set(null);
+        this.operationCreationPiece.set(null);
         this.message.set('Pièce locale créée. Le rapprochement bancaire a été enregistré.');
         this.chargerOperations(() => this.loading.set(false));
       },
@@ -1183,7 +1206,7 @@ export class TresoreriePage implements OnInit {
 
   charger(): void {
     this.operationExerciceAnterieur.set(null);
-    this.operationRapprochementDefaut.set(null);
+    this.operationCreationPiece.set(null);
     this.operationRapprochementManuel.set(null);
     this.operationManuelleId.set(null);
     this.propositionsCartes.set(null);

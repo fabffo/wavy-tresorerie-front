@@ -638,6 +638,9 @@
                         <div class="row-options-menu">
                           <button type="button" (click)="options.open = false; voirOperation(operation)">Voir</button>
                           <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+                          @if (creationPiecePossible(operation)) {
+                            <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirCreationPiece(operation)">Rapprocher avec création d’une pièce</button>
+                          }
                           @if (statutConsultation(operation) === 'TIERS_IDENTIFIE') {
                             <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirExerciceAnterieur(operation)">Rapprocher sur exercice antérieur</button>
                           }
@@ -780,34 +783,42 @@
             </form>
           </div>
         }
-        @if (operationRapprochementDefaut(); as operation) {
-          <form class="operation-form" (submit)="$event.preventDefault(); validerRapprochementParDefaut()">
-            <h3>Rapprocher par défaut</h3>
-            <dl>
-              <dt>Opération bancaire</dt><dd>{{ operation.libelle }}</dd>
-              <dt>Tiers</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
-              <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
-              <dt>Montant disponible</dt><dd>{{ montant(disponibleBancaire(operation)) }}</dd>
-              <dt>Type</dt><dd>Pièce de rapprochement interne</dd>
-            </dl>
-            <label>Libellé de la pièce
-              <input required maxlength="500" placeholder="Facture octobre 2025" [value]="libellePieceLocale()"
-                [disabled]="loading()" (input)="libellePieceLocale.set($any($event.target).value)" />
-            </label>
-            <label class="check">
-              <input type="checkbox" [checked]="confirmationPieceLocale()" [disabled]="loading()"
-                (change)="confirmationPieceLocale.set($any($event.target).checked)" />
-              Je confirme la création de la pièce et son rapprochement.
-            </label>
-            @if (erreurPieceLocale(); as erreur) { <p role="alert">{{ erreur }}</p> }
-            <div class="form-actions">
-              <button type="submit" class="primary" [disabled]="loading() || !libellePieceLocale().trim() || !confirmationPieceLocale()">Valider</button>
-              <button type="button" [disabled]="loading()" (click)="operationRapprochementDefaut.set(null)">Annuler</button>
-              @if (erreurPieceLocale()) {
-                <button type="button" [disabled]="loading()" (click)="operationRapprochementDefaut.set(null); ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+        @if (operationCreationPiece(); as operation) {
+          <div class="modal-backdrop" (keydown.escape)="!loading() && operationCreationPiece.set(null)">
+            <form class="manual-match-modal operation-detail-dialog" role="dialog" aria-modal="true"
+              aria-labelledby="creation-piece-titre" (submit)="$event.preventDefault(); validerCreationPiece()">
+              <h2 id="creation-piece-titre">Rapprocher avec création d’une pièce</h2>
+              <p>Une pièce interne sans justificatif original sera associée à cette opération.</p>
+              <dl>
+                <dt>Tiers</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
+                <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
+                <dt>Montant TTC</dt><dd>{{ montant(disponibleBancaire(operation)) }}</dd>
+                <dt>Période comptable envisagée</dt><dd>{{ operation.dateOperation | date : 'MM/yyyy' }}</dd>
+                <dt>TVA déductible</dt><dd>{{ montant(0) }}</dd>
+              </dl>
+              @if (avertissementPieceLocale()) {
+                <p class="warning">Une pièce est déjà connue pour cette opération. Vérifiez-la pour éviter une double comptabilisation.</p>
               }
-            </div>
-          </form>
+              <label>Libellé
+                <input required maxlength="500" [value]="libellePieceLocale()" [disabled]="loading()"
+                  (input)="libellePieceLocale.set($any($event.target).value)" />
+              </label>
+              <label>Motif
+                <input required maxlength="500" [value]="motifPieceLocale()" [disabled]="loading()"
+                  (input)="motifPieceLocale.set($any($event.target).value)" />
+              </label>
+              <label class="check">
+                <input type="checkbox" [checked]="confirmationPieceLocale()" [disabled]="loading()"
+                  (change)="confirmationPieceLocale.set($any($event.target).checked)" />
+                Je confirme la création de la pièce interne sans justificatif original et son rapprochement.
+              </label>
+              @if (erreurPieceLocale(); as erreur) { <p class="warning" role="alert">{{ erreur }}</p> }
+              <div class="form-actions">
+                <button type="submit" class="primary" [disabled]="loading() || !libellePieceLocale().trim() || !motifPieceLocale().trim() || !confirmationPieceLocale()">Valider</button>
+                <button type="button" [disabled]="loading()" (click)="operationCreationPiece.set(null)">Annuler</button>
+              </div>
+            </form>
+          </div>
         }
         @if (operationConsultee(); as operationListe) {
           @let operation = detailOperation()?.operation ?? operationListe;

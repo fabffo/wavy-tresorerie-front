@@ -206,7 +206,7 @@ export class TresorerieApiService {
   }
 
   rapprocherParDefaut(operationId: number, demande: {
-    tiersId: number; montantDisponible: number; libelle: string; confirmation: boolean;
+    tiersId: number; montantDisponible: number; libelle: string; confirmation: boolean; motifAbsenceJustificatif?: string;
   }) {
     return this.http.post<OperationBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/rapprochement-par-defaut`, demande);
   }
