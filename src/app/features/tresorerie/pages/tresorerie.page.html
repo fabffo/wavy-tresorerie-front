@@ -693,7 +693,7 @@
                       <section class="assistant-candidat">
                         <label><input [type]="etapeAssistant() === 'TIERS' ? 'radio' : 'checkbox'" [name]="'tiers-' + ligne.operation.id" [disabled]="loading() || ligne.bloquee || c.carte?.conflit"
                           [checked]="estSelectionAssistant(ligne,c)" (change)="selectionnerAssistant(ligne,c,$any($event.target).checked)" />
-                          {{ c.numeroPiece || c.nomTiers }} @if (c.cle === 'CREATION') { · {{ montant(c.montantPropose) }} } — {{ c.cle.startsWith('P:REMBOURSEMENT:') ? 'Remboursement bénéficiaire' : c.typePiece }}</label>
+                          {{ c.numeroPiece || c.nomTiers }} @if (c.cle === 'CREATION' || c.cle === 'CREATION_SANS_JUSTIFICATIF') { · {{ montant(c.montantPropose) }} } — {{ c.cle.startsWith('P:REMBOURSEMENT:') ? 'Remboursement bénéficiaire' : c.typePiece }}</label>
                         <p>Tiers proposé : {{ c.nomTiers }} · Tiers {{ c.tiersId }}<br>
                           Montant disponible : {{ montant(c.montantDisponible) }}<br>Pièce : {{ c.datePiece || 'sans objet' }} · Échéance : {{ c.dateEcheance || 'absente' }}</p>
                         @for (critere of c.criteres; track critere) { <div>{{ critere }}</div> }
@@ -701,7 +701,7 @@
                         @if (c.pieceId && c.typePiece !== 'TIERS') { <button type="button" (click)="ouvrirFacture(c.pieceId,$any(c.typePiece),c.numeroPiece)">Ouvrir la pièce et son justificatif</button> }
 
                         @if (choixPourAssistant(ligne,c); as choix) {
-                          @if (c.typePiece !== 'TIERS' && c.cle !== 'CREATION' && !c.carte) {
+                          @if (c.typePiece !== 'TIERS' && c.cle !== 'CREATION' && c.cle !== 'CREATION_SANS_JUSTIFICATIF' && !c.carte) {
                             <label>Montant à affecter <input type="number" min="0.01" step="0.01" [max]="c.montantPropose" [value]="choix.montant"
                               (change)="modifierChoixAssistant(ligne.operation.id,c.cle,'montant',+$any($event.target).value)" /></label>
                           }
