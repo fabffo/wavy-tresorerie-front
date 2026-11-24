@@ -1046,6 +1046,79 @@ export class TresoreriePage implements OnInit {
   readonly confirmationPieceLocale = signal(false);
   readonly erreurPieceLocale = signal<string | null>(null);
 
+  readonly operationModificationTiers = signal<OperationBancaire | null>(null);
+  readonly rechercheModificationTiers = signal('');
+  readonly candidatsModificationTiers = signal<TiersAssistant[]>([]);
+  readonly tiersModificationSelectionne = signal<number | null>(null);
+  readonly erreurModificationTiers = signal<string | null>(null);
+  readonly rechercheModificationTiersEnCours = signal(false);
+
+  modificationTiersPossible(operation: OperationBancaire): boolean {
+    return this.statutConsultation(operation) === 'TIERS_IDENTIFIE'
+      && !operation.rapprochee && operation.statutRapprochement === 'NON_RAPPROCHEE';
+  }
+
+  ouvrirModificationTiers(operation: OperationBancaire): void {
+    if (this.loading() || !this.modificationTiersPossible(operation)) return;
+    this.operationModificationTiers.set(operation);
+    this.changerRechercheModificationTiers('');
+  }
+
+  changerRechercheModificationTiers(recherche: string): void {
+    this.rechercheModificationTiers.set(recherche);
+    this.candidatsModificationTiers.set([]);
+    this.tiersModificationSelectionne.set(null);
+    this.erreurModificationTiers.set(null);
+    this.rechercheModificationTiersEnCours.set(false);
+  }
+
+  chercherModificationTiers(): void {
+    const recherche = this.rechercheModificationTiers().trim();
+    const operation = this.operationModificationTiers();
+    if (!operation || recherche.length < 2 || this.rechercheModificationTiersEnCours()) return;
+    const contexte = this.cleContexteCartes();
+    const encoreCourant = () => this.operationModificationTiers() === operation
+      && this.rechercheModificationTiers().trim() === recherche && this.cleContexteCartes() === contexte;
+    this.erreurModificationTiers.set(null);
+    this.rechercheModificationTiersEnCours.set(true);
+    this.api.rechercherTiersAssistant(recherche).pipe(finalize(() => {
+      if (encoreCourant()) this.rechercheModificationTiersEnCours.set(false);
+    })).subscribe({
+      next: tiers => {
+        if (encoreCourant()) {
+          this.candidatsModificationTiers.set(tiers.filter(t => t.id !== operation.tiersId && t.actif !== false));
+        }
+      },
+      error: erreur => {
+        if (encoreCourant()) this.erreurModificationTiers.set(getHttpErrorMessage(erreur));
+      },
+    });
+  }
+
+  validerModificationTiers(): void {
+    const operation = this.operationModificationTiers();
+    const tiersId = this.tiersModificationSelectionne();
+    if (this.loading() || !operation?.tiersId || !tiersId
+        || !this.candidatsModificationTiers().some(tiers => tiers.id === tiersId)) return;
+    const contexte = this.cleContexteCartes();
+    this.loading.set(true);
+    this.erreurModificationTiers.set(null);
+    this.api.modifierTiersOperation(operation.id, operation.tiersId, tiersId).subscribe({
+      next: resultat => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.operations.update(operations => operations.map(op => op.id === resultat.id ? resultat : op));
+        this.operationModificationTiers.set(null);
+        this.message.set('Tiers de l’opération modifié.');
+        this.chargerOperations(() => this.loading.set(false));
+      },
+      error: erreur => {
+        if (contexte !== this.cleContexteCartes()) return;
+        this.erreurModificationTiers.set(erreur?.error?.message || getHttpErrorMessage(erreur));
+        this.loading.set(false);
+      },
+    });
+  }
+
   creationPiecePossible(operation: OperationBancaire): boolean {
     return this.rapprochementManuelPossible(operation) && !operation.pieceRapprochementId
       && Number(operation.dateOperation.slice(0, 4)) === new Date().getFullYear();
@@ -1205,6 +1278,7 @@ export class TresoreriePage implements OnInit {
   }
 
   charger(): void {
+    this.operationModificationTiers.set(null);
     this.operationExerciceAnterieur.set(null);
     this.operationCreationPiece.set(null);
     this.operationRapprochementManuel.set(null);

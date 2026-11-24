@@ -150,6 +150,11 @@ export class TresorerieApiService {
     return this.http.post<BilanAssistant>(`${this.baseUrl}/operations-bancaires/assistant/confirmer`, demande);
   }
 
+  modifierTiersOperation(operationId: number, tiersActuelId: number, tiersId: number) {
+    return this.http.patch<OperationBancaire>(`${this.baseUrl}/operations-bancaires/${operationId}/tiers`,
+      { tiersActuelId, tiersId });
+  }
+
   rechercherTiersAssistant(query: string) {
     return this.http.get<TiersAssistant[]>(`${environment.apiBaseUrl}/api/tiers/search`, {
       params: new HttpParams().set('query', query).set('actif', 'true'),

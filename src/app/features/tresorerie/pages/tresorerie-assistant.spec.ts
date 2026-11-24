@@ -397,7 +397,7 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(libelle?.getAttribute('title')).toBe(operation.libelle);
     expect(html.querySelector('[role="dialog"]')).toBeNull();
     const cellule=html.querySelector('tbody tr td:last-child')!;
-    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher avec création d’une pièce', 'Rapprocher sur exercice antérieur']);
+    expect(Array.from(cellule.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Modifier le tiers', 'Rapprocher manuellement', 'Rapprocher avec création d’une pièce', 'Rapprocher sur exercice antérieur']);
     const partielle = html.querySelector('tbody tr:nth-child(2) td:last-child')!;
     expect(Array.from(partielle.querySelectorAll('button')).map(b=>b.textContent?.trim())).toEqual(['Voir', 'Rapprocher manuellement', 'Rapprocher avec création d’une pièce']);
     api['consulterOperation']=vi.fn(()=>of({operation,historique:[],solde:100}));
@@ -406,6 +406,57 @@ describe('Assistant bancaire : lecture, périmètre et confirmation explicite', 
     expect(api['consulterOperation']).toHaveBeenCalledWith(operation.id);
     expect(api['confirmerAssistant']).not.toHaveBeenCalled();
   });
+  it('change CLAUDE.AI en Anthropic depuis la modale et actualise le périmètre filtré', () => {
+    const fixture = TestBed.createComponent(TresoreriePage);
+    page = fixture.componentInstance;
+    page.onglet.set('operations');
+    const claude = { ...operation, id: 20, tiersId: 79, tiersReconnu: 'CLAUDE.AI', dateOperation: '2026-01-07',
+      debit: 21.60, montant: 21.60 };
+    page.operations.set([claude]);
+    page.choixImport.set('12');
+    page.filtresOperations.set({ rolesTiers: ['FOURNISSEUR_GENERAL'], statutConsultation: 'TIERS_IDENTIFIE' });
+    api['rechercherTiersAssistant'] = vi.fn(() => of([
+      { id: 22, libelle: 'Anthropic, PBC', roles: ['FOURNISSEUR_GENERAL'], actif: true },
+      { id: 79, libelle: 'CLAUDE.AI', roles: [], actif: true },
+      { id: 3, libelle: 'Inactif', roles: [], actif: false },
+    ]));
+    const reponse = new Subject<OperationBancaire>();
+    api['modifierTiersOperation'] = vi.fn(() => reponse);
+    fixture.detectChanges();
+    const html: HTMLElement = fixture.nativeElement;
+    [...html.querySelectorAll<HTMLButtonElement>('tbody button')].find(b => b.textContent?.trim() === 'Modifier le tiers')!.click();
+    fixture.detectChanges();
+    const modale = html.querySelector<HTMLFormElement>('[role="dialog"]')!;
+    expect(modale.textContent).toContain('CLAUDE.AI');
+    expect(modale.textContent).toContain('07/01/2026');
+    expect(modale.textContent).toContain('21,60');
+    const recherche = modale.querySelector<HTMLInputElement>('input[type="search"]')!;
+    recherche.value = 'Anthropic';
+    recherche.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    modale.querySelector<HTMLButtonElement>('button[type="button"]')!.click();
+    fixture.detectChanges();
+    const select = modale.querySelector('select')!;
+    expect(Array.from(select.options).map(o => o.value)).toEqual(['', '22']);
+    select.value = '22';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    const nouveau = { ...claude, tiersId: 22, tiersReconnu: 'Anthropic, PBC', rolesTiers: ['FOURNISSEUR_GENERAL'] };
+    api['operations'] = vi.fn(() => of({ content: [nouveau], totalElements: 1, totalPages: 1 }));
+    api['compteursOperations'] = vi.fn(() => of({ total: 1, rapprochees: 0, partielles: 0, tiersIdentifies: 1, nonRapprochees: 0, sansTiers: 0 }));
+    modale.dispatchEvent(new Event('submit', { cancelable: true }));
+    modale.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(api['modifierTiersOperation']).toHaveBeenCalledExactlyOnceWith(20, 79, 22);
+    reponse.next(nouveau);
+    reponse.complete();
+    fixture.detectChanges();
+    expect(html.querySelector('[role="dialog"]')).toBeNull();
+    expect(html.querySelector('tbody')?.textContent).toContain('Anthropic, PBC');
+    expect(api['operations']).toHaveBeenCalledWith({ importId: '12', rolesTiers: ['FOURNISSEUR_GENERAL'], statutConsultation: 'TIERS_IDENTIFIE' }, expect.anything());
+    expect(api['compteursOperations']).toHaveBeenCalledWith({ importId: '12', rolesTiers: ['FOURNISSEUR_GENERAL'], statutConsultation: 'TIERS_IDENTIFIE' });
+    expect(api['confirmerAssistant']).not.toHaveBeenCalled();
+  });
+
   it('crée une pièce locale une seule fois et recharge la liste et les compteurs filtrés', () => {
     vi.mocked(page.chargerOperations).mockRestore();
     page.onglet.set('operations');

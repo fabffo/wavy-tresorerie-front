@@ -632,16 +632,21 @@
                   <td class="right nowrap">{{ montant(montantSigne(operation)) }}</td>
                   <td>{{ statutsConsultation[statutConsultation(operation)] }}</td>
                   <td>
-                    @if (rapprochementManuelPossible(operation)) {
+                    @if (rapprochementManuelPossible(operation) || modificationTiersPossible(operation)) {
                       <details #options class="row-options">
                         <summary class="btn btn-outline-secondary btn-sm" [attr.aria-label]="'Options ' + operation.libelle">Options</summary>
                         <div class="row-options-menu">
                           <button type="button" (click)="options.open = false; voirOperation(operation)">Voir</button>
-                          <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+                          @if (modificationTiersPossible(operation)) {
+                            <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirModificationTiers(operation)">Modifier le tiers</button>
+                          }
+                          @if (rapprochementManuelPossible(operation)) {
+                            <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirRapprochementManuel(operation)">Rapprocher manuellement</button>
+                          }
                           @if (creationPiecePossible(operation)) {
                             <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirCreationPiece(operation)">Rapprocher avec création d’une pièce</button>
                           }
-                          @if (statutConsultation(operation) === 'TIERS_IDENTIFIE') {
+                          @if (rapprochementManuelPossible(operation) && statutConsultation(operation) === 'TIERS_IDENTIFIE') {
                             <button type="button" [disabled]="loading()" (click)="options.open = false; ouvrirExerciceAnterieur(operation)">Rapprocher sur exercice antérieur</button>
                           }
                         </div>
@@ -749,6 +754,40 @@
                 <button type="button" [disabled]="loading()" (click)="recapAssistant.set(null)">Annuler</button>
               </section></div>
             }
+        @if (operationModificationTiers(); as operation) {
+          <div class="modal-backdrop" (keydown.escape)="!loading() && operationModificationTiers.set(null)">
+            <form class="manual-match-modal operation-detail-dialog" role="dialog" aria-modal="true"
+              aria-labelledby="modifier-tiers-titre" (submit)="$event.preventDefault(); validerModificationTiers()">
+              <h2 id="modifier-tiers-titre">Modifier le tiers</h2>
+              <dl>
+                <dt>Date bancaire</dt><dd>{{ operation.dateOperation | date : 'dd/MM/yyyy' }}</dd>
+                <dt>Montant bancaire</dt><dd>{{ montant(montantSigne(operation)) }}</dd>
+                <dt>Tiers actuel</dt><dd>{{ operation.tiersReconnu || ('Tiers n° ' + operation.tiersId) }}</dd>
+              </dl>
+              <label>Rechercher un tiers
+                <input type="search" [value]="rechercheModificationTiers()" [disabled]="loading()"
+                  (input)="changerRechercheModificationTiers($any($event.target).value)"
+                  (keydown.enter)="$event.preventDefault(); chercherModificationTiers()" />
+              </label>
+              <button type="button" [disabled]="loading() || rechercheModificationTiersEnCours() || rechercheModificationTiers().trim().length < 2"
+                (click)="chercherModificationTiers()">Rechercher</button>
+              <label>Nouveau tiers
+                <select [value]="tiersModificationSelectionne() ?? ''" [disabled]="loading() || !candidatsModificationTiers().length"
+                  (change)="tiersModificationSelectionne.set(+$any($event.target).value || null)">
+                  <option value="">Sélectionner un tiers</option>
+                  @for (tiers of candidatsModificationTiers(); track tiers.id) {
+                    <option [value]="tiers.id">{{ tiers.libelle }} · {{ libellesRolesTiers(tiers.roles) }}</option>
+                  }
+                </select>
+              </label>
+              @if (erreurModificationTiers(); as erreur) { <p class="warning" role="alert">{{ erreur }}</p> }
+              <div class="form-actions">
+                <button type="submit" class="primary" [disabled]="loading() || !tiersModificationSelectionne()">Valider</button>
+                <button type="button" [disabled]="loading()" (click)="operationModificationTiers.set(null)">Annuler</button>
+              </div>
+            </form>
+          </div>
+        }
         @if (operationExerciceAnterieur(); as operation) {
           <div class="modal-backdrop" (keydown.escape)="!loading() && operationExerciceAnterieur.set(null)">
             <form class="manual-match-modal operation-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="exercice-anterieur-titre"
